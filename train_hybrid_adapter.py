@@ -41,7 +41,7 @@ def train(config_path):
     num_attention_heads = config.get("num_attention_heads", 8)
     dropout = config.get("dropout", 0.1)
     lr = config.get("lr", 5e-5)
-
+    v_parameterization = config.get("v_parameterization", False)
 
     batch_size = config.get("batch_size", 16)
     num_epochs = config.get("num_epochs", 10)
@@ -113,8 +113,8 @@ def train(config_path):
             beta_schedule="scaled_linear",
             num_train_timesteps=1000,
             clip_sample=False,
-            prediction_type="v_prediction",
-            rescale_betas_zero_snr=True
+            prediction_type="v_prediction" if v_parameterization else "epsilon",
+            rescale_betas_zero_snr=True if v_parameterization else False
         ),
         torch_dtype=torch.float16,
         use_safetensors=True
