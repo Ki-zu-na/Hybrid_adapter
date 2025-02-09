@@ -51,11 +51,11 @@ def train(config_path):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # 加载 SDXL 模型 (使用 diffusers)
-    sdxl_pipeline = StableDiffusionXLPipeline.from_pretrained(
-        sdxl_model_path,
+    sdxl_pipeline = StableDiffusionXLPipeline.from_single_file(
+        sdxl_model_path,  
         torch_dtype=torch.float16,
-        variant="fp16",
-        use_safetensors=True
+        use_safetensors=True,
+        load_safety_checker=False
     )
     # SDXL 的 text_encoder 和 text_encoder_2 不需要梯度
     sdxl_pipeline.text_encoder.requires_grad_(False)
@@ -162,7 +162,7 @@ def train(config_path):
             # 采样
             if global_step % sample_every_n_steps == 0:
                 # 重新加载完整的SDXL模型用于生成sample
-                full_sdxl_pipeline = StableDiffusionXLPipeline.from_pretrained(
+                full_sdxl_pipeline = StableDiffusionXLPipeline.from_single_file(
                     sdxl_model_path,
                     scheduler=DDIMScheduler(
                         beta_start=0.00085,
@@ -174,9 +174,8 @@ def train(config_path):
                         rescale_betas_zero_snr=True
                     ),
                     torch_dtype=torch.float16,
-                    variant="fp16",
-                    use_safetensors=True
-
+                    use_safetensors=True,
+                    load_safety_checker=False
                 )
 
                 full_sdxl_pipeline.text_encoder.requires_grad_(False)
