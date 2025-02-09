@@ -34,28 +34,32 @@ def train(config_path):
     )
 
     # 从配置中读取超参数
-    input_dim = config.input_dim
-    seq_len = config.seq_len
-    mlp_hidden_dim = config.mlp_hidden_dim
-    num_transformer_layers = config.num_transformer_layers
-    num_attention_heads = config.num_attention_heads
-    dropout = config.dropout
-    lr = config.lr
+    input_dim = config.get("input_dim", 2048)
+    seq_len = config.get("seq_len", 512)
+    mlp_hidden_dim = config.get("mlp_hidden_dim", 4096)
+    num_transformer_layers = config.get("num_transformer_layers", 2)
+    num_attention_heads = config.get("num_attention_heads", 8)
+    dropout = config.get("dropout", 0.1)
+    lr = config.get("lr", 5e-5)
 
-    batch_size = config.batch_size
-    num_epochs = config.num_epochs
-    gradient_accumulation_steps = config.gradient_accumulation_steps
-    max_grad_norm = config.max_grad_norm
-    sample_every_n_steps = config.sample_every_n_steps
-    checkpoint_save_steps = config.checkpoint_save_steps  # 新增参数：每隔固定步数保存一次模型
+
+    batch_size = config.get("batch_size", 16)
+    num_epochs = config.get("num_epochs", 10)
+    gradient_accumulation_steps = config.get("gradient_accumulation_steps", 2)
+    max_grad_norm = config.get("max_grad_norm", 1.0)
+    sample_every_n_steps = config.get("sample_every_n_steps", 1000)
+
+    checkpoint_save_steps = config.get("checkpoint_save_steps", 1000)
+
 
     json_data_path = config.json_data_path
     sdxl_model_path = config.sdxl_model_path
     llama_model_path = config.llama_model_path
-    output_dir = config.output_dir
-    adapter_checkpoint = config.adapter_checkpoint
-    use_cross_attn = config.use_cross_attn
-    num_workers = config.num_workers
+    output_dir = config.get("output_dir", "output")
+    adapter_checkpoint = config.get("adapter_checkpoint", None)
+    use_cross_attn = config.get("use_cross_attn", True)
+    num_workers = config.get("num_workers", 16)
+
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
