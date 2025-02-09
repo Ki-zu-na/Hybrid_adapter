@@ -159,7 +159,7 @@ def train(config_path):
             progress.set_postfix(loss=loss.item() * gradient_accumulation_steps, lr=lr_scheduler.get_last_lr()[0])
 
             # 采样
-            if global_step % sample_every_n_steps == 0:
+            if global_step % sample_every_n_steps == 0 and global_step != 0:
                 # 重新加载完整的SDXL模型用于生成sample
                 full_sdxl_pipeline = StableDiffusionXLPipeline.from_single_file(
                     sdxl_model_path,
