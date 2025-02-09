@@ -5,7 +5,7 @@ import torch
 from torch.utils.data import Dataset
 from diffusers import StableDiffusionXLPipeline
 from utils.embedding import get_llama_embedding
-from train_hybrid_adapter import worker_sdxl_pipeline
+
 
 class JSONAdapterDataset(Dataset):
     """
@@ -75,8 +75,9 @@ class JSONAdapterDataset(Dataset):
         # 延迟加载 SDXL pipeline：优先使用 worker_init_fn 中初始化的全局变量
         if self.sdxl_model is None:
             try:
+                global worker_sdxl_pipeline
                 self.sdxl_model = worker_sdxl_pipeline
-            except NameError:
+            except (NameError, AttributeError):
                 # 如果不在 worker 中，则回退到直接初始化
                 self.sdxl_model = StableDiffusionXLPipeline.from_single_file(
                     self.sdxl_model_path,
