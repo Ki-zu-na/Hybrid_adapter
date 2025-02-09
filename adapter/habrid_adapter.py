@@ -8,21 +8,31 @@ class TransformerBlockWithCrossAttn(nn.Module):
     If cross_attn_input is provided, applies cross attention after self-attention.
     Uses pre-LN structure.
     """
-    def __init__(self, input_dim: int, num_heads: int, hidden_dim: int, dropout: float, cross_attn_dim: int):  # 添加 cross_attn_dim
+    def __init__(self, input_dim: int, num_heads: int, hidden_dim: int, dropout: float, cross_attn_dim: int):
         super().__init__()
         self.input_dim = input_dim
         self.num_heads = num_heads
         self.hidden_dim = hidden_dim
         self.dropout = dropout
-        self.cross_attn_dim = cross_attn_dim  # 存储 cross_attn_dim
-        
-        # Self-attention layer (使用 batch_first=True)
+        self.cross_attn_dim = cross_attn_dim
+
+        # Self-attention layer
         self.self_attn = nn.MultiheadAttention(embed_dim=input_dim, num_heads=num_heads, dropout=dropout, batch_first=True)
-        
-        # Cross-attention layer; used if extra context is provided.
-        # 关键修改：embed_dim 设置为 input_dim, kdim 和 vdim 设置为 cross_attn_dim
+
+        # Cross-attention layer
         self.cross_attn = nn.MultiheadAttention(embed_dim=input_dim, num_heads=num_heads, dropout=dropout, batch_first=True, kdim=cross_attn_dim, vdim=cross_attn_dim)
-        
+
+        # 手动创建 q, k, v 投影权重
+        self.q_proj_weight = nn.Parameter(torch.empty((input_dim, input_dim)))
+        self.k_proj_weight = nn.Parameter(torch.empty((input_dim, cross_attn_dim)))
+        self.v_proj_weight = nn.Parameter(torch.empty((input_dim, cross_attn_dim)))
+
+        # 将手动创建的权重赋值给 cross_attn
+        self.cross_attn.q_proj_weight = self.q_proj_weight
+        self.cross_attn.k_proj_weight = self.k_proj_weight
+        self.cross_attn.v_proj_weight = self.v_proj_weight
+
+
         # Feed-forward network
         self.ff = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
@@ -30,15 +40,16 @@ class TransformerBlockWithCrossAttn(nn.Module):
             nn.Dropout(dropout),
             nn.Linear(hidden_dim, input_dim)
         )
-        
+
         # Pre-LN LayerNorms
         self.norm1 = nn.LayerNorm(input_dim)
-        self.norm2 = nn.LayerNorm(input_dim)  # for cross attention
+        self.norm2 = nn.LayerNorm(input_dim)
         self.norm3 = nn.LayerNorm(input_dim)
-        
+
         self.dropout_layer = nn.Dropout(dropout)
-        
+
     def forward(self, x: torch.Tensor, cross_attn_input: torch.Tensor = None) -> torch.Tensor:
+        # ... (forward 方法其余部分保持不变) ...
         # Self-attention block (with pre-layer norm)
         residual = x
         x_norm = self.norm1(x)
@@ -61,22 +72,23 @@ class TransformerBlockWithCrossAttn(nn.Module):
         
         return x
 
+
 class HybridAdapter(nn.Module):
     def __init__(
         self,
-        input_dim: int = 2048,     # LLM输出维度
-        seq_len: int = 512,        # 修改为需要的token数，如77
-        mlp_hidden_dim: int = 4096, # MLP中间层维度
-        num_transformer_layers: int = 3, # Transformer层数
-        num_attention_heads: int = 8,    # 注意力头数
-        dropout: float = 0.1,       # 防止过拟合
-        cross_attn_dim: int = 768 # 添加参数，用于cross attention的输入的维度
+        input_dim: int = 2048,
+        seq_len: int = 77,
+        mlp_hidden_dim: int = 4096,
+        num_transformer_layers: int = 3,
+        num_attention_heads: int = 8,
+        dropout: float = 0.1,
+        cross_attn_dim: int = 768
     ):
         super().__init__()
         self.seq_len = seq_len
         self.cross_attn_dim = cross_attn_dim
-        
-        # Stage 1: MLP进行非线性变换
+
+        # Stage 1: MLP
         self.mlp = nn.Sequential(
             nn.Linear(input_dim, mlp_hidden_dim),
             nn.GELU(),
@@ -85,47 +97,52 @@ class HybridAdapter(nn.Module):
             nn.Linear(mlp_hidden_dim, input_dim),
             nn.LayerNorm(input_dim)
         )
-        
-        # Stage 2: 可学习的位置编码（用于扩展为序列）
+
+        # Stage 2: Positional encoding
         self.position_embed = nn.Parameter(
             torch.randn(1, seq_len, input_dim) * 0.02
         )
-        
-        # Stage 3: Transformer Blocks with Cross-Attention
+
+        # Stage 3: Transformer Blocks
         self.transformer_blocks = nn.ModuleList([
             TransformerBlockWithCrossAttn(
                 input_dim=input_dim,
                 num_heads=num_attention_heads,
                 hidden_dim=mlp_hidden_dim,
                 dropout=dropout,
-                cross_attn_dim=cross_attn_dim  # 传入 cross_attn_dim
+                cross_attn_dim=cross_attn_dim
             )
             for _ in range(num_transformer_layers)
         ])
 
-        self._init_weights()
+        self._init_weights()  # 在所有参数定义后调用
 
     def _init_weights(self):
-        # MLP最后一层初始化为近似恒等变换
+        # MLP initialization
         nn.init.eye_(self.mlp[4].weight)
         nn.init.zeros_(self.mlp[4].bias)
-        
-        # 初始化Transformer blocks的权重
+
+        # Initialize Transformer blocks' weights
         for block in self.transformer_blocks:
-            # Initialize self-attention weights
+            # Self-attention weights
             nn.init.xavier_uniform_(block.self_attn.in_proj_weight)
             nn.init.constant_(block.self_attn.in_proj_bias, 0.)
-            # Initialize cross-attention weights
-            nn.init.xavier_uniform_(block.cross_attn.in_proj_weight)
-            nn.init.constant_(block.cross_attn.in_proj_bias, 0.)
-            # Optionally, initialize feed-forward layers
+            # Cross-attention weights
+            # 现在手动初始化我们创建的权重
+            nn.init.xavier_uniform_(block.q_proj_weight)
+            nn.init.xavier_uniform_(block.k_proj_weight)
+            nn.init.xavier_uniform_(block.v_proj_weight)
+
+            nn.init.constant_(block.cross_attn.in_proj_bias, 0.) # bias 保持不变
+            # Feed-forward layers
             for m in block.ff:
                 if isinstance(m, nn.Linear):
                     nn.init.xavier_uniform_(m.weight)
                     if m.bias is not None:
                         nn.init.zeros_(m.bias)
-        
+
     def extend_positional_encoding(self, new_seq_len: int) -> torch.Tensor:
+        # ... (extend_positional_encoding 方法保持不变) ...
         """
         将已有位置编码扩展到新的长度 new_seq_len。
         这里采用线性插值方式扩展 [1, old_seq_len, input_dim] -> [1, new_seq_len, input_dim]
@@ -142,8 +159,8 @@ class HybridAdapter(nn.Module):
             align_corners=False
         ).transpose(1, 2)
         return new_pos_embed
-            
     def forward(self, x: torch.Tensor, cross_attn_input: torch.Tensor = None) -> torch.Tensor:
+        # ... (forward 方法保持不变)
         """
         输入:
             x: [batch_size, num_tokens, input_dim] (当LLM输出多个token时)
