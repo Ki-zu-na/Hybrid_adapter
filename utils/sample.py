@@ -45,7 +45,8 @@ def sample_images(sdxl_pipeline, adapter_model, llama_tokenizer, llama_model, pr
         # 3. 替换 SDXL 的文本嵌入 (pooled_embeds and text_embeds)
         # 注意：这里直接设置，绕过了 SDXL 内部的 embedding 获取过程.
         prompt_embeds = adapter_emb
-        pooled_prompt_embeds = torch.randn_like(sdxl_pipeline(prompt=prompt).prompt_embeds)  # 使用正态分布
+        hidden_size = sdxl_pipeline.text_encoder_2.config.hidden_size
+        pooled_prompt_embeds = torch.randn(1, hidden_size, device=device, dtype=sdxl_pipeline.text_encoder_2.dtype)
          # 生成图像
         image = sdxl_pipeline(prompt_embeds=prompt_embeds, pooled_prompt_embeds=pooled_prompt_embeds, output_type="pil").images[0]
     else:
