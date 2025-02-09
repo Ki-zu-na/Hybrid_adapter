@@ -133,18 +133,17 @@ def train(config_path):
         progress = tqdm(dataloader, desc=f"Epoch {epoch+1}/{num_epochs}")
         for step, (llama_output, (prompt_embeds, pooled_prompt_embeds)) in enumerate(progress):
             llama_output = llama_output.to(device, non_blocking=True)
-            prompt_embeds = prompt_embeds.to(device, non_blocking=True)
+            prompt_embeds = prompt_embeds.to(device, non_blocking=True) # 这些现在是拼接后的 CLIP embeddings
             pooled_prompt_embeds = pooled_prompt_embeds.to(device, non_blocking=True)
-            
+
             with torch.cuda.amp.autocast(enabled=(scaler is not None)):
                 if use_cross_attn:
-                    # 将 prompt_embeds 同时作为 cross attention 上下文
-                    output_te = adapter_model(llama_output, cross_attn_input=prompt_embeds)
+                    output_te = adapter_model(llama_output, cross_attn_input=prompt_embeds) # 如果你想用 cross_attn_input，保留它
                 else:
                     output_te = adapter_model(llama_output)
-                    
-                loss = criterion(output_te, prompt_embeds)  # 只和 prompt_embeds 计算损失
-                loss = loss / gradient_accumulation_steps  # 梯度累积
+
+                loss = criterion(output_te, prompt_embeds)  # 将 Adapter 输出与拼接后的 prompt_embeds 计算损失
+                loss = loss / gradient_accumulation_steps
 
             if scaler is not None:
                 scaler.scale(loss).backward()

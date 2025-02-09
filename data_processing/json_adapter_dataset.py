@@ -155,7 +155,7 @@ class JSONAdapterDataset(Dataset):
         # 计算 Llama embedding
         llama_emb = get_llama_embedding(new_prompt, self.tokenizer, self.llama_model, self.device)
 
-        # 使用官方方式计算 SDXL 文本嵌入
+        # 使用官方方式计算 SDXL 文本嵌入 (同时获取 text_encoder 和 text_encoder_2 的 embedding)
         with torch.no_grad():
             encoded_input = self.sdxl_model.tokenizer(
                 new_prompt,
@@ -165,13 +165,29 @@ class JSONAdapterDataset(Dataset):
                 return_tensors="pt"
             )
             encoded_input = {key: value.to(self.device) for key, value in encoded_input.items()}
-            text_outputs = self.sdxl_model.text_encoder(**encoded_input)
-            prompt_embeds = text_outputs.last_hidden_state
-            if hasattr(text_outputs, "pooler_output") and text_outputs.pooler_output is not None:
-                pooled_prompt_embeds = text_outputs.pooler_output
-            else:
-                pooled_prompt_embeds = prompt_embeds.mean(dim=1, keepdim=True)
-            prompt_embeds = prompt_embeds.squeeze(0)
-            pooled_prompt_embeds = pooled_prompt_embeds.squeeze(0)
 
-        return llama_emb, (prompt_embeds, pooled_prompt_embeds)
+            # 获取 text_encoder (CLIP ViT-L/14) 的 embedding
+            text_outputs = self.sdxl_model.text_encoder(**encoded_input)
+            prompt_embeds_clip_l = text_outputs.last_hidden_state
+            if hasattr(text_outputs, "pooler_output") and text_outputs.pooler_output is not None:
+                pooled_prompt_embeds_clip_l = text_outputs.pooler_output
+            else:
+                pooled_prompt_embeds_clip_l = prompt_embeds_clip_l.mean(dim=1, keepdim=True)
+            prompt_embeds_clip_l = prompt_embeds_clip_l.squeeze(0)
+            pooled_prompt_embeds_clip_l = pooled_prompt_embeds_clip_l.squeeze(0)
+
+            # 获取 text_encoder_2 (CLIP ViT-H/14) 的 embedding
+            text_outputs_2 = self.sdxl_model.text_encoder_2(**encoded_input)
+            prompt_embeds_clip_h = text_outputs_2.last_hidden_state
+            if hasattr(text_outputs_2, "pooler_output") and text_outputs_2.pooler_output is not None:
+                pooled_prompt_embeds_clip_h = text_outputs_2.pooler_output
+            else:
+                pooled_prompt_embeds_clip_h = prompt_embeds_clip_h.mean(dim=1, keepdim=True)
+            prompt_embeds_clip_h = prompt_embeds_clip_h.squeeze(0)
+            pooled_prompt_embeds_clip_h = pooled_prompt_embeds_clip_h.squeeze(0)
+
+            # 拼接 prompt embeddings (沿最后一个维度，即embedding维度)
+            concatenated_prompt_embeds = torch.cat((prompt_embeds_clip_l, prompt_embeds_clip_h), dim=-1)
+            concatenated_pooled_prompt_embeds = torch.cat((pooled_prompt_embeds_clip_l, pooled_prompt_embeds_clip_h), dim=-1)
+
+        return llama_emb, (concatenated_prompt_embeds, concatenated_pooled_prompt_embeds) # 返回拼接后的 embedding
