@@ -174,7 +174,7 @@ class JSONAdapterDataset(Dataset):
             else:
                 pooled_prompt_embeds_clip_l = prompt_embeds_clip_l.mean(dim=1, keepdim=True)
             prompt_embeds_clip_l = prompt_embeds_clip_l.squeeze(0)
-            pooled_prompt_embeds_clip_l = pooled_prompt_embeds_clip_l.squeeze(0)
+            pooled_prompt_embeds_clip_l = pooled_prompt_embeds_clip_l.reshape(-1) # 明确 reshape 为 1D
 
             # 获取 text_encoder_2 (CLIP ViT-H/14) 的 embedding
             text_outputs_2 = self.sdxl_model.text_encoder_2(**encoded_input)
@@ -184,9 +184,9 @@ class JSONAdapterDataset(Dataset):
             else:
                 pooled_prompt_embeds_clip_h = prompt_embeds_clip_h.mean(dim=1, keepdim=True)
             prompt_embeds_clip_h = prompt_embeds_clip_h.squeeze(0)
-            pooled_prompt_embeds_clip_h = pooled_prompt_embeds_clip_h.squeeze(0)
+            pooled_prompt_embeds_clip_h = pooled_prompt_embeds_clip_h.reshape(-1) # 明确 reshape 为 1D
 
-            # 拼接 prompt embeddings (沿最后一个维度，即embedding维度)
+            # Concatenate prompt embeddings
             concatenated_prompt_embeds = torch.cat((prompt_embeds_clip_l, prompt_embeds_clip_h), dim=-1)
             concatenated_pooled_prompt_embeds = torch.cat((pooled_prompt_embeds_clip_l, pooled_prompt_embeds_clip_h), dim=-1)
 
