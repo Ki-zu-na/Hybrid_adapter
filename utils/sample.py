@@ -29,7 +29,7 @@ def sample_images(sdxl_pipeline, adapter_model, llama_tokenizer, llama_model, pr
         use_adapter: 是否使用 Adapter (True: 使用, False: 使用原始 SDXL).
     """
     os.makedirs(output_dir, exist_ok=True)
-    filename = f"sample_{step}_{'adapter' if use_adapter else 'original'}.png"
+    filename = f"sample_{'adapter' if use_adapter else 'original'}_step_{step}.png"
     filepath = os.path.join(output_dir, filename)
     
     if use_adapter:
