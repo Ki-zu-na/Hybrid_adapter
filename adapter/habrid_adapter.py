@@ -8,18 +8,20 @@ class TransformerBlockWithCrossAttn(nn.Module):
     If cross_attn_input is provided, applies cross attention after self-attention.
     Uses pre-LN structure.
     """
-    def __init__(self, input_dim: int, num_heads: int, hidden_dim: int, dropout: float):
+    def __init__(self, input_dim: int, num_heads: int, hidden_dim: int, dropout: float, cross_attn_dim: int):  # 添加 cross_attn_dim
         super().__init__()
         self.input_dim = input_dim
         self.num_heads = num_heads
         self.hidden_dim = hidden_dim
         self.dropout = dropout
+        self.cross_attn_dim = cross_attn_dim  # 存储 cross_attn_dim
         
         # Self-attention layer (使用 batch_first=True)
         self.self_attn = nn.MultiheadAttention(embed_dim=input_dim, num_heads=num_heads, dropout=dropout, batch_first=True)
         
         # Cross-attention layer; used if extra context is provided.
-        self.cross_attn = nn.MultiheadAttention(embed_dim=input_dim, num_heads=num_heads, dropout=dropout, batch_first=True)
+        # 关键修改：embed_dim 设置为 input_dim, kdim 和 vdim 设置为 cross_attn_dim
+        self.cross_attn = nn.MultiheadAttention(embed_dim=input_dim, num_heads=num_heads, dropout=dropout, batch_first=True, kdim=cross_attn_dim, vdim=cross_attn_dim)
         
         # Feed-forward network
         self.ff = nn.Sequential(
@@ -47,6 +49,7 @@ class TransformerBlockWithCrossAttn(nn.Module):
         if cross_attn_input is not None:
             residual = x
             x_norm = self.norm2(x)
+            # key 和 value 都使用 cross_attn_input
             cross_attn_output, _ = self.cross_attn(x_norm, cross_attn_input, cross_attn_input)
             x = residual + self.dropout_layer(cross_attn_output)
         
@@ -62,14 +65,16 @@ class HybridAdapter(nn.Module):
     def __init__(
         self,
         input_dim: int = 2048,     # LLM输出维度
-        seq_len: int = 77,        # 修改为需要的token数，如77
+        seq_len: int = 512,        # 修改为需要的token数，如77
         mlp_hidden_dim: int = 4096, # MLP中间层维度
         num_transformer_layers: int = 3, # Transformer层数
         num_attention_heads: int = 8,    # 注意力头数
-        dropout: float = 0.1       # 防止过拟合
+        dropout: float = 0.1,       # 防止过拟合
+        cross_attn_dim: int = 768 # 添加参数，用于cross attention的输入的维度
     ):
         super().__init__()
         self.seq_len = seq_len
+        self.cross_attn_dim = cross_attn_dim
         
         # Stage 1: MLP进行非线性变换
         self.mlp = nn.Sequential(
@@ -92,7 +97,8 @@ class HybridAdapter(nn.Module):
                 input_dim=input_dim,
                 num_heads=num_attention_heads,
                 hidden_dim=mlp_hidden_dim,
-                dropout=dropout
+                dropout=dropout,
+                cross_attn_dim=cross_attn_dim  # 传入 cross_attn_dim
             )
             for _ in range(num_transformer_layers)
         ])

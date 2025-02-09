@@ -47,6 +47,7 @@ def train(config_path):
     adapter_checkpoint = config.adapter_checkpoint
     use_cross_attn = config.use_cross_attn
     num_workers = config.num_workers
+    cross_attn_dim = config.cross_attn_dim  # 从配置文件读取
 
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -65,7 +66,8 @@ def train(config_path):
         mlp_hidden_dim=mlp_hidden_dim,
         num_transformer_layers=num_transformer_layers,
         num_attention_heads=num_attention_heads,
-        dropout=dropout
+        dropout=dropout,
+        cross_attn_dim=cross_attn_dim  # 传入 cross_attn_dim
     ).to(device)
     
     # 加载预训练的 Adapter 权重 (如果提供)
