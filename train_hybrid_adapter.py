@@ -54,8 +54,7 @@ def train(config_path):
     sdxl_pipeline = StableDiffusionXLPipeline.from_single_file(
         sdxl_model_path,  
         torch_dtype=torch.float16,
-        use_safetensors=True,
-        load_safety_checker=False
+        use_safetensors=True
     )
     # SDXL 的 text_encoder 和 text_encoder_2 不需要梯度
     sdxl_pipeline.text_encoder.requires_grad_(False)
@@ -174,8 +173,7 @@ def train(config_path):
                         rescale_betas_zero_snr=True
                     ),
                     torch_dtype=torch.float16,
-                    use_safetensors=True,
-                    load_safety_checker=False
+                    use_safetensors=True
                 )
 
                 full_sdxl_pipeline.text_encoder.requires_grad_(False)
