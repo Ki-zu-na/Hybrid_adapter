@@ -118,7 +118,7 @@ def train(config_path):
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
-        pin_memory=True,
+        pin_memory=False,
         worker_init_fn=worker_init_fn
     )
 
