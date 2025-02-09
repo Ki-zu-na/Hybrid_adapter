@@ -103,7 +103,59 @@ def train(config_path):
         sdxl_model_path=sdxl_model_path,
         device=device
     )
+    
+    def generate_sample():
+        full_sdxl_pipeline = StableDiffusionXLPipeline.from_single_file(
+        sdxl_model_path,
+        scheduler=DDIMScheduler(
+            beta_start=0.00085,
+            beta_end=0.012,
+            beta_schedule="scaled_linear",
+            num_train_timesteps=1000,
+            clip_sample=False,
+            prediction_type="v_prediction",
+            rescale_betas_zero_snr=True
+        ),
+        torch_dtype=torch.float16,
+        use_safetensors=True
+        )
 
+        full_sdxl_pipeline.text_encoder.requires_grad_(False)
+        full_sdxl_pipeline.text_encoder_2.requires_grad_(False)
+        full_sdxl_pipeline.to(device)
+
+        adapter_model.eval()  # 切换到评估模式
+        example_prompt = config["example_prompt"]  # 示例 prompt
+
+        # 生成原始SDXL图像，并假设 sample_images 保存图片文件至 output_dir，如 sample_original_step_{global_step}.png
+        sample_images(
+            full_sdxl_pipeline, None, llama_tokenizer, llama_model,
+            example_prompt, device, output_dir, global_step, use_adapter=False
+        )
+        # 使用 Adapter 辅助生成图像，并假设保存为 sample_adapter_step_{global_step}.png
+        hidden_size = full_sdxl_pipeline.text_encoder_2.config.hidden_size
+        pooled_prompt_embeds = torch.randn(1, hidden_size, device=device, dtype=full_sdxl_pipeline.text_encoder_2.dtype)
+        sample_images(
+            full_sdxl_pipeline, adapter_model, llama_tokenizer, llama_model,
+            example_prompt, device, output_dir, global_step, use_adapter=True
+        )
+        
+        try:
+            from PIL import Image
+            original_sample_path = os.path.join(output_dir, f"sample_original_step_{global_step}.png")
+            adapter_sample_path = os.path.join(output_dir, f"sample_adapter_step_{global_step}.png")
+            original_img = Image.open(original_sample_path)
+            adapter_img = Image.open(adapter_sample_path)
+
+            # 使用 wandb 记录采样图像
+            wandb.log({
+                "sample_original": wandb.Image(original_img, caption=f"Step {global_step} Original"),
+                "sample_adapter": wandb.Image(adapter_img, caption=f"Step {global_step} Adapter")
+            }, step=global_step)
+        except Exception as e:
+            print(f"Error logging sample images to wandb at step {global_step}: {e}")
+
+        adapter_model.train()  # 切换回训练模式
     # 定义 worker 初始化函数，在每个 worker 内部加载 SDXL pipeline
     def worker_init_fn(worker_id):
         global worker_sdxl_pipeline
@@ -138,9 +190,12 @@ def train(config_path):
 
     adapter_model.train()
     global_step = 0
+    if config.get("sample_at_start", False):
+        generate_sample()
     for epoch in range(num_epochs):
         epoch_loss = 0.0
         progress = tqdm(dataloader, desc=f"Epoch {epoch+1}/{num_epochs}")
+
         for step, (llama_output, (prompt_embeds, pooled_prompt_embeds)) in enumerate(progress):
             llama_output = llama_output.to(device, non_blocking=True)
             prompt_embeds = prompt_embeds.to(device, non_blocking=True)  # 这些现在是拼接后的 CLIP embeddings
@@ -189,57 +244,8 @@ def train(config_path):
             # 采样，并记录 sample 到 wandb
             if global_step % sample_every_n_steps == 0 :
                 # 重新加载完整的SDXL模型用于生成 sample
-                full_sdxl_pipeline = StableDiffusionXLPipeline.from_single_file(
-                    sdxl_model_path,
-                    scheduler=DDIMScheduler(
-                        beta_start=0.00085,
-                        beta_end=0.012,
-                        beta_schedule="scaled_linear",
-                        num_train_timesteps=1000,
-                        clip_sample=False,
-                        prediction_type="v_prediction",
-                        rescale_betas_zero_snr=True
-                    ),
-                    torch_dtype=torch.float16,
-                    use_safetensors=True
-                )
+                generate_sample()
 
-                full_sdxl_pipeline.text_encoder.requires_grad_(False)
-                full_sdxl_pipeline.text_encoder_2.requires_grad_(False)
-                full_sdxl_pipeline.to(device)
-
-                adapter_model.eval()  # 切换到评估模式
-                example_prompt = config["example_prompt"]  # 示例 prompt
-
-                # 生成原始SDXL图像，并假设 sample_images 保存图片文件至 output_dir，如 sample_original_step_{global_step}.png
-                sample_images(
-                    full_sdxl_pipeline, None, llama_tokenizer, llama_model,
-                    example_prompt, device, output_dir, global_step, use_adapter=False
-                )
-                # 使用 Adapter 辅助生成图像，并假设保存为 sample_adapter_step_{global_step}.png
-                hidden_size = full_sdxl_pipeline.text_encoder_2.config.hidden_size
-                pooled_prompt_embeds = torch.randn(1, hidden_size, device=device, dtype=full_sdxl_pipeline.text_encoder_2.dtype)
-                sample_images(
-                    full_sdxl_pipeline, adapter_model, llama_tokenizer, llama_model,
-                    example_prompt, device, output_dir, global_step, use_adapter=True
-                )
-                
-                try:
-                    from PIL import Image
-                    original_sample_path = os.path.join(output_dir, f"sample_original_step_{global_step}.png")
-                    adapter_sample_path = os.path.join(output_dir, f"sample_adapter_step_{global_step}.png")
-                    original_img = Image.open(original_sample_path)
-                    adapter_img = Image.open(adapter_sample_path)
-
-                    # 使用 wandb 记录采样图像
-                    wandb.log({
-                        "sample_original": wandb.Image(original_img, caption=f"Step {global_step} Original"),
-                        "sample_adapter": wandb.Image(adapter_img, caption=f"Step {global_step} Adapter")
-                    }, step=global_step)
-                except Exception as e:
-                    print(f"Error logging sample images to wandb at step {global_step}: {e}")
-
-                adapter_model.train()  # 切换回训练模式
 
             # 新增：每隔固定步数储存一次模型
             if global_step % checkpoint_save_steps == 0 and global_step != 0:
@@ -255,7 +261,7 @@ def train(config_path):
     torch.save(adapter_model.state_dict(), os.path.join(output_dir, "final_adapter.pth"))
     print(f"Final adapter model saved to: {output_dir}/final_adapter.pth")
     wandb.save(os.path.join(output_dir, "final_adapter.pth"))
-    
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train the Hybrid Adapter")
