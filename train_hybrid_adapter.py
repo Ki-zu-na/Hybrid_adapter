@@ -6,6 +6,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import argparse
+from omegaconf import OmegaConf
 from transformers import AutoTokenizer, AutoModel, CLIPProcessor, CLIPModel, get_cosine_schedule_with_warmup
 from diffusers import StableDiffusionXLPipeline, DDIMScheduler
 
@@ -21,29 +22,31 @@ def load_config(config_path):
 
 def train(config_path):
     # 从指定路径加载配置文件
-    config = load_config(config_path)
+    config = OmegaConf.load(config_path)
+
 
     # 从配置中读取超参数
-    input_dim = config["input_dim"]
-    seq_len = config["seq_len"]
-    mlp_hidden_dim = config["mlp_hidden_dim"]
-    num_transformer_layers = config["num_transformer_layers"]
-    num_attention_heads = config["num_attention_heads"]
-    dropout = config["dropout"]
-    lr = config["lr"]
+    input_dim = config.input_dim
+    seq_len = config.seq_len
+    mlp_hidden_dim = config.mlp_hidden_dim
+    num_transformer_layers = config.num_transformer_layers
+    num_attention_heads = config.num_attention_heads
+    dropout = config.dropout
+    lr = config.lr
+
+    batch_size = config.batch_size
+    num_epochs = config.num_epochs
+    gradient_accumulation_steps = config.gradient_accumulation_steps
+    max_grad_norm = config.max_grad_norm
+    sample_every_n_steps = config.sample_every_n_steps
     
-    batch_size = config["batch_size"]
-    num_epochs = config["num_epochs"]
-    gradient_accumulation_steps = config["gradient_accumulation_steps"]
-    max_grad_norm = config["max_grad_norm"]
-    sample_every_n_steps = config["sample_every_n_steps"]
-    
-    json_data_path = config["json_data_path"]
-    sdxl_model_path = config["sdxl_model_path"]
-    llama_model_path = config["llama_model_path"]
-    output_dir = config["output_dir"]
-    adapter_checkpoint = config["adapter_checkpoint"]
-    use_cross_attn = config["use_cross_attn"]
+    json_data_path = config.json_data_path
+    sdxl_model_path = config.sdxl_model_path
+    llama_model_path = config.llama_model_path
+    output_dir = config.output_dir
+    adapter_checkpoint = config.adapter_checkpoint
+    use_cross_attn = config.use_cross_attn
+
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
