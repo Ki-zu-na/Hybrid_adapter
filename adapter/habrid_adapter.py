@@ -62,7 +62,7 @@ class HybridAdapter(nn.Module):
     def __init__(
         self,
         input_dim: int = 2048,     # LLM输出维度
-        seq_len: int = 512,        # 修改为需要的token数，如512
+        seq_len: int = 77,        # 修改为需要的token数，如512
         mlp_hidden_dim: int = 4096, # MLP中间层维度
         num_transformer_layers: int = 3, # Transformer层数
         num_attention_heads: int = 8,    # 注意力头数
