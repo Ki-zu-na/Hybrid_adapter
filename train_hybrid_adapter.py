@@ -113,7 +113,7 @@ def train(config_path):
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
 
     # AMP 自动混合精度初始化 (仅在CUDA可用时)
-    scaler = torch.amp.GradScaler() if device.type == "cuda" else None
+    scaler = torch.cuda.amp.GradScaler() if device.type == "cuda" else None
 
     adapter_model.train()
     global_step = 0
@@ -125,7 +125,7 @@ def train(config_path):
             prompt_embeds = prompt_embeds.to(device, non_blocking=True)
             pooled_prompt_embeds = pooled_prompt_embeds.to(device, non_blocking=True)
             
-            with torch.amp.autocast(enabled=(scaler is not None)):
+            with torch.cuda.amp.autocast(enabled=(scaler is not None)):
                 if use_cross_attn:
                     # 将 prompt_embeds 同时作为 cross attention 上下文
                     output_te = adapter_model(llama_output, cross_attn_input=prompt_embeds)
