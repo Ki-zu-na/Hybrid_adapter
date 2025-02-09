@@ -46,6 +46,7 @@ def train(config_path):
     output_dir = config.output_dir
     adapter_checkpoint = config.adapter_checkpoint
     use_cross_attn = config.use_cross_attn
+    num_workers = config.num_workers
 
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -110,7 +111,7 @@ def train(config_path):
         sdxl_model=sdxl_pipeline,  # 传入整个 sdxl_pipeline
         device=device
     )
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=16, pin_memory=True)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
 
     # AMP 自动混合精度初始化 (仅在CUDA可用时)
     scaler = torch.cuda.amp.GradScaler() if device.type == "cuda" else None

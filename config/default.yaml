@@ -11,6 +11,7 @@ num_epochs: 10
 gradient_accumulation_steps: 2
 max_grad_norm: 1.0
 sample_every_n_steps: 1000
+num_workers: 16
 json_data_path: "data/data.json"
 sdxl_model_path: "stabilityai/stable-diffusion-xl-base-1.0"
 llama_model_path: "meta-llama/Llama-3.2-1B"
