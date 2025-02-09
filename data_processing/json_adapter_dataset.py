@@ -1,9 +1,11 @@
+import os
 import json
 import random
 import torch
 from torch.utils.data import Dataset
+from diffusers import StableDiffusionXLPipeline
 from utils.embedding import get_llama_embedding
-
+from train_hybrid_adapter import worker_sdxl_pipeline
 
 class JSONAdapterDataset(Dataset):
     """
@@ -24,7 +26,7 @@ class JSONAdapterDataset(Dataset):
         json_file_path (str): JSON 文件的路径.
         tokenizer: 用于 Llama 模型的 tokenizer.
         llama_model: 预训练的 Llama 模型.
-        sdxl_model: 已加载的 SDXL 模型 (整个 pipeline).
+        sdxl_model_path: SDXL pipeline 的路径.
         device: torch.device 对象.
         drop_artist_prob (float): 删除艺术家标签的概率.
         caption_nl_prob (float): 使用自然语言描述（regular_summary）的概率.
@@ -34,7 +36,7 @@ class JSONAdapterDataset(Dataset):
         dropout_rate (float): 对灵活标签随机丢弃的概率.
         shuffle_caption (bool): 是否随机打乱标签顺序.
     """
-    def __init__(self, json_file_path, tokenizer, llama_model, sdxl_model, device,
+    def __init__(self, json_file_path, tokenizer, llama_model, sdxl_model_path, device,
                  drop_artist_prob=0.3, caption_nl_prob=0.2, style_mix_prob=0.1,
                  drop_all_fixed_prob=0.1, drop_all_flex_prob=0.1, dropout_rate=0.1,
                  shuffle_caption=True):
@@ -44,8 +46,11 @@ class JSONAdapterDataset(Dataset):
         self.keys = list(self.json_data.keys())
         self.tokenizer = tokenizer
         self.llama_model = llama_model
-        self.sdxl_model = sdxl_model  # 整个 pipeline
+        self.sdxl_model_path = sdxl_model_path  # 保存路径，用于延迟加载
         self.device = device
+
+        # 不在此处加载 SDXL pipeline，避免 pickle 问题
+        self.sdxl_model = None
 
         # 参数设置
         self.drop_artist_prob = drop_artist_prob
@@ -67,6 +72,27 @@ class JSONAdapterDataset(Dataset):
         return len(self.keys)
 
     def __getitem__(self, idx):
+        # 延迟加载 SDXL pipeline：优先使用 worker_init_fn 中初始化的全局变量
+        if self.sdxl_model is None:
+            try:
+                self.sdxl_model = worker_sdxl_pipeline
+            except NameError:
+                # 如果不在 worker 中，则回退到直接初始化
+                self.sdxl_model = StableDiffusionXLPipeline.from_single_file(
+                    self.sdxl_model_path,
+                    torch_dtype=torch.float16,
+                    use_safetensors=True
+                )
+                self.sdxl_model.text_encoder.requires_grad_(False)
+                self.sdxl_model.text_encoder_2.requires_grad_(False)
+                self.sdxl_model.to(self.device)
+                self.sdxl_model.unet = None
+                self.sdxl_model.vae = None
+                if hasattr(self.sdxl_model, "scheduler"):
+                    self.sdxl_model.scheduler = None
+                if hasattr(self.sdxl_model, "safety_checker"):
+                    self.sdxl_model.safety_checker = None
+
         item_key = self.keys[idx]
         extras = self.json_data[item_key]
 
@@ -128,9 +154,22 @@ class JSONAdapterDataset(Dataset):
         # 计算 Llama embedding
         llama_emb = get_llama_embedding(new_prompt, self.tokenizer, self.llama_model, self.device)
 
-        # 使用 SDXL pipeline 获取文本嵌入
+        # 使用官方方式计算 SDXL 文本嵌入
         with torch.no_grad():
-            prompt_embeds, pooled_prompt_embeds = self.sdxl_model.get_text_embeddings(new_prompt)
+            encoded_input = self.sdxl_model.tokenizer(
+                new_prompt,
+                padding="max_length",
+                truncation=True,
+                max_length=self.sdxl_model.tokenizer.model_max_length,
+                return_tensors="pt"
+            )
+            encoded_input = {key: value.to(self.device) for key, value in encoded_input.items()}
+            text_outputs = self.sdxl_model.text_encoder(**encoded_input)
+            prompt_embeds = text_outputs.last_hidden_state
+            if hasattr(text_outputs, "pooler_output") and text_outputs.pooler_output is not None:
+                pooled_prompt_embeds = text_outputs.pooler_output
+            else:
+                pooled_prompt_embeds = prompt_embeds.mean(dim=1, keepdim=True)
             prompt_embeds = prompt_embeds.squeeze(0)
             pooled_prompt_embeds = pooled_prompt_embeds.squeeze(0)
 

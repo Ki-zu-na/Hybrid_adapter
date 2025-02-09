@@ -51,25 +51,6 @@ def train(config_path):
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # 加载 SDXL 模型 (使用 diffusers)
-    sdxl_pipeline = StableDiffusionXLPipeline.from_single_file(
-        sdxl_model_path,  
-        torch_dtype=torch.float16,
-        use_safetensors=True
-    )
-    # SDXL 的 text_encoder 和 text_encoder_2 不需要梯度
-    sdxl_pipeline.text_encoder.requires_grad_(False)
-    sdxl_pipeline.text_encoder_2.requires_grad_(False)
-    sdxl_pipeline.to(device)
-
-    # 卸载非 CLIP 部分，训练时只保留 text_encoder
-    sdxl_pipeline.unet = None
-    sdxl_pipeline.vae = None
-    if hasattr(sdxl_pipeline, "scheduler"):
-        sdxl_pipeline.scheduler = None
-    if hasattr(sdxl_pipeline, "safety_checker"):
-        sdxl_pipeline.safety_checker = None
-    
     # 加载预训练 Llama 模型与 tokenizer (仅用于生成 embedding)
     llama_tokenizer = AutoTokenizer.from_pretrained(llama_model_path)
     llama_model = AutoModel.from_pretrained(llama_model_path).to(device)
@@ -96,7 +77,7 @@ def train(config_path):
     optimizer = optim.AdamW(adapter_model.parameters(), lr=lr, weight_decay=1e-2)  # 添加 weight_decay
     criterion = nn.MSELoss()
     # 学习率调度器
-    num_training_steps = num_epochs * (len(JSONAdapterDataset(json_data_path, llama_tokenizer, llama_model, sdxl_pipeline, device)) // (batch_size*gradient_accumulation_steps))
+    num_training_steps = num_epochs * (len(JSONAdapterDataset(json_data_path, llama_tokenizer, llama_model, sdxl_model_path, device)) // (batch_size*gradient_accumulation_steps))
     lr_scheduler = get_cosine_schedule_with_warmup(
         optimizer=optimizer,
         num_warmup_steps=num_training_steps // 10,  # 10% 的训练步数用于预热
@@ -108,10 +89,38 @@ def train(config_path):
         json_file_path=json_data_path,
         tokenizer=llama_tokenizer,
         llama_model=llama_model,
-        sdxl_model=sdxl_pipeline,  # 传入整个 sdxl_pipeline
+        sdxl_model_path=sdxl_model_path,
         device=device
     )
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
+
+    # 定义 worker 初始化函数，在每个 worker 内部加载 SDXL pipeline
+    def worker_init_fn(worker_id):
+        global worker_sdxl_pipeline
+        worker_sdxl_pipeline = StableDiffusionXLPipeline.from_single_file(
+            sdxl_model_path,
+            torch_dtype=torch.float16,
+            use_safetensors=True
+        )
+        # SDXL 中不需要梯度
+        worker_sdxl_pipeline.text_encoder.requires_grad_(False)
+        worker_sdxl_pipeline.text_encoder_2.requires_grad_(False)
+        worker_sdxl_pipeline.to(device)
+        # 卸载无关部分，减少内存占用
+        worker_sdxl_pipeline.unet = None
+        worker_sdxl_pipeline.vae = None
+        if hasattr(worker_sdxl_pipeline, "scheduler"):
+            worker_sdxl_pipeline.scheduler = None
+        if hasattr(worker_sdxl_pipeline, "safety_checker"):
+            worker_sdxl_pipeline.safety_checker = None
+    
+    dataloader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=True,
+        worker_init_fn=worker_init_fn
+    )
 
     # AMP 自动混合精度初始化 (仅在CUDA可用时)
     scaler = torch.cuda.amp.GradScaler() if device.type == "cuda" else None
