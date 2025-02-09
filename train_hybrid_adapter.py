@@ -24,7 +24,6 @@ def train(config_path):
     # 从指定路径加载配置文件
     config = OmegaConf.load(config_path)
 
-
     # 从配置中读取超参数
     input_dim = config.input_dim
     seq_len = config.seq_len
@@ -39,7 +38,8 @@ def train(config_path):
     gradient_accumulation_steps = config.gradient_accumulation_steps
     max_grad_norm = config.max_grad_norm
     sample_every_n_steps = config.sample_every_n_steps
-    
+    checkpoint_save_steps = config.checkpoint_save_steps  # 新增参数：每隔固定步数保存一次模型
+
     json_data_path = config.json_data_path
     sdxl_model_path = config.sdxl_model_path
     llama_model_path = config.llama_model_path
@@ -48,8 +48,6 @@ def train(config_path):
     use_cross_attn = config.use_cross_attn
     num_workers = config.num_workers
 
-
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # 加载预训练 Llama 模型与 tokenizer (仅用于生成 embedding)
@@ -57,7 +55,6 @@ def train(config_path):
     llama_model = AutoModel.from_pretrained(llama_model_path).to(device)
     llama_model.requires_grad_(False)  # LLaMA 模型不需要训练
     llama_model.eval()
-
 
     # 创建 Hybrid Adapter 模型
     adapter_model = HybridAdapter(
@@ -78,7 +75,7 @@ def train(config_path):
     optimizer = optim.AdamW(adapter_model.parameters(), lr=lr, weight_decay=1e-2)  # 添加 weight_decay
     criterion = nn.MSELoss()
     # 学习率调度器
-    num_training_steps = num_epochs * (len(JSONAdapterDataset(json_data_path, llama_tokenizer, llama_model, sdxl_model_path, device)) // (batch_size*gradient_accumulation_steps))
+    num_training_steps = num_epochs * (len(JSONAdapterDataset(json_data_path, llama_tokenizer, llama_model, sdxl_model_path, device)) // (batch_size * gradient_accumulation_steps))
     lr_scheduler = get_cosine_schedule_with_warmup(
         optimizer=optimizer,
         num_warmup_steps=num_training_steps // 10,  # 10% 的训练步数用于预热
@@ -133,12 +130,12 @@ def train(config_path):
         progress = tqdm(dataloader, desc=f"Epoch {epoch+1}/{num_epochs}")
         for step, (llama_output, (prompt_embeds, pooled_prompt_embeds)) in enumerate(progress):
             llama_output = llama_output.to(device, non_blocking=True)
-            prompt_embeds = prompt_embeds.to(device, non_blocking=True) # 这些现在是拼接后的 CLIP embeddings
+            prompt_embeds = prompt_embeds.to(device, non_blocking=True)  # 这些现在是拼接后的 CLIP embeddings
             pooled_prompt_embeds = pooled_prompt_embeds.to(device, non_blocking=True)
 
             with torch.cuda.amp.autocast(enabled=(scaler is not None)):
                 if use_cross_attn:
-                    output_te = adapter_model(llama_output, cross_attn_input=prompt_embeds) # 如果你想用 cross_attn_input，保留它
+                    output_te = adapter_model(llama_output, cross_attn_input=prompt_embeds)  # 如果你想用 cross_attn_input，保留它
                 else:
                     output_te = adapter_model(llama_output)
 
@@ -170,7 +167,7 @@ def train(config_path):
 
             # 采样
             if global_step % sample_every_n_steps == 0 and global_step != 0:
-                # 重新加载完整的SDXL模型用于生成sample
+                # 重新加载完整的SDXL模型用于生成 sample
                 full_sdxl_pipeline = StableDiffusionXLPipeline.from_single_file(
                     sdxl_model_path,
                     scheduler=DDIMScheduler(
@@ -203,6 +200,12 @@ def train(config_path):
                     example_prompt, device, output_dir, global_step, use_adapter=True
                 )
                 adapter_model.train()  # 切换回训练模式
+
+            # 新增：每隔固定步数储存一次模型
+            if global_step % checkpoint_save_steps == 0 and global_step != 0:
+                checkpoint_path = os.path.join(output_dir, f'adapter_checkpoint_step_{global_step}.pth')
+                torch.save(adapter_model.state_dict(), checkpoint_path)
+                print(f"Saved adapter checkpoint at step {global_step} to {checkpoint_path}")
 
         epoch_loss /= len(dataset)
         print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss:.4f}, Global Step: {global_step}")

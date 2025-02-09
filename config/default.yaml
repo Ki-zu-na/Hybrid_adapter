@@ -18,7 +18,7 @@ llama_model_path: "meta-llama/Llama-3.2-1B"
 output_dir: "output"
 # adapter_checkpoint: "output/final_adapter.pth"
 use_cross_attn: true
-
+checkpoint_save_steps: 1000
 
 
 example_prompt: "A photo of a cat wearing a hat"
