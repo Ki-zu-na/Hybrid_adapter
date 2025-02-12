@@ -61,17 +61,22 @@ def sample_images(sdxl_pipeline, adapter_model, llama_tokenizer, llama_model, pr
         max_length_l = tokenizer_l.model_max_length - 2 # Or tokenizer_l.model_max_length if no special tokens to account for
         max_length_g = tokenizer_g.model_max_length - 2 # Or tokenizer_g.model_max_length if no special tokens to account for
 
-        prompt_embeds_clip_l, pooled_prompt_embeds_clip_g = get_prompt_embeddings_chunked(
+        prompt_embeds_clip_l, _ = get_prompt_embeddings_chunked(
             prompt,
             tokenizer_l,
             text_encoder_l,
+            device,
+            max_length_l
+        )
+        prompt_embeds_clip_g, pooled_prompt_embeds_clip_g = get_prompt_embeddings_chunked(
+            prompt,
             tokenizer_g,
             text_encoder_g,
             device,
-            max_length_l,
             max_length_g
         )
-        concat_prompt_embeds = torch.cat((prompt_embeds_clip_l, pooled_prompt_embeds_clip_g), dim=1)
+        concat_prompt_embeds = torch.cat((prompt_embeds_clip_l ,prompt_embeds_clip_g), dim=1)
+
         image = sdxl_pipeline(
             prompt_embeds=concat_prompt_embeds,
             pooled_prompt_embeds=pooled_prompt_embeds_clip_g,
