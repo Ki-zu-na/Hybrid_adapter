@@ -47,6 +47,7 @@ def sample_images(sdxl_pipeline, adapter_model, llama_tokenizer, llama_model, pr
         prompt_embeds = adapter_emb
         hidden_size = sdxl_pipeline.text_encoder_2.config.hidden_size
         pooled_prompt_embeds = torch.randn(1, hidden_size, device=device, dtype=sdxl_pipeline.text_encoder_2.dtype)
+        print(f"prompt_embeds: {prompt_embeds.shape}, pooled_prompt_embeds: {pooled_prompt_embeds.shape}")
          # 生成图像
         image = sdxl_pipeline(prompt_embeds=prompt_embeds, pooled_prompt_embeds=pooled_prompt_embeds, output_type="pil").images[0]
     else:
