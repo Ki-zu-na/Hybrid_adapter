@@ -36,6 +36,8 @@ def train(config_path):
     # 从配置中读取超参数
     input_dim = config.get("input_dim", 2048)
     seq_len = config.get("seq_len", 512)
+    clip_l_dim = config.get("clip_l_dim", 768)
+    clip_h_dim = config.get("clip_h_dim", 1280)
     mlp_hidden_dim = config.get("mlp_hidden_dim", 4096)
     num_transformer_layers = config.get("num_transformer_layers", 2)
     num_attention_heads = config.get("num_attention_heads", 8)
@@ -76,7 +78,9 @@ def train(config_path):
         mlp_hidden_dim=mlp_hidden_dim,
         num_transformer_layers=num_transformer_layers,
         num_attention_heads=num_attention_heads,
-        dropout=dropout
+        dropout=dropout,
+        clip_l_dim=clip_l_dim, # 添加 clip_l_dim 参数
+        clip_h_dim=clip_h_dim # 添加 clip_h_dim 参数
     ).to(device)
     
     # 加载预训练的 Adapter 权重 (如果提供)
@@ -203,11 +207,13 @@ def train(config_path):
 
             with torch.cuda.amp.autocast(enabled=(scaler is not None)):
                 if use_cross_attn:
-                    output_te = adapter_model(llama_output, cross_attn_input=prompt_embeds)  # 如果你想用 cross_attn_input，保留它
+                    adapter_prompt_embeds, adapter_pooled_prompt_embeds = adapter_model(llama_output, cross_attn_input=prompt_embeds)  # 获取两个输出
+                    output_te = adapter_prompt_embeds # 训练时我们主要监督 prompt_embeds 部分
                 else:
-                    output_te = adapter_model(llama_output)
+                    adapter_prompt_embeds, adapter_pooled_prompt_embeds = adapter_model(llama_output) # 获取两个输出
+                    output_te = adapter_prompt_embeds # 训练时我们主要监督 prompt_embeds 部分
 
-                loss = criterion(output_te, prompt_embeds)  # 将 Adapter 输出与拼接后的 prompt_embeds 计算损失
+                loss = criterion(output_te, prompt_embeds)  # 将 Adapter 的 prompt_embeds 输出与拼接后的 prompt_embeds 计算损失
                 loss = loss / gradient_accumulation_steps
 
             if scaler is not None:

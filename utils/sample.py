@@ -31,27 +31,28 @@ def sample_images(sdxl_pipeline, adapter_model, llama_tokenizer, llama_model, pr
     os.makedirs(output_dir, exist_ok=True)
     filename = f"sample_{'adapter' if use_adapter else 'original'}_step_{step}.png"
     filepath = os.path.join(output_dir, filename)
-    
+
     if use_adapter:
         # 1. 获取 LLaMA embedding
         llama_emb = get_llama_embedding(prompt, llama_tokenizer, llama_model, device)  # [1, hidden_dim]
         llama_emb = llama_emb.unsqueeze(0) # [batch_size, hidden_dim]
 
-        # 2. 通过 Adapter 转换
+        # 2. 通过 Adapter 转换，获取 prompt_embeds 和 pooled_prompt_embeds
+        adapter_model.eval() # 确保在 eval 模式
         with torch.no_grad():
-            adapter_emb = adapter_model(llama_emb)  # [1, seq_len, hidden_dim]
-            adapter_emb = adapter_emb.to(dtype=sdxl_pipeline.text_encoder_2.dtype)
+            adapter_prompt_embeds, adapter_pooled_prompt_embeds = adapter_model(llama_emb)  # 返回两个 embeddings
+            adapter_prompt_embeds = adapter_prompt_embeds.to(dtype=sdxl_pipeline.text_encoder_2.dtype)
+            adapter_pooled_prompt_embeds = adapter_pooled_prompt_embeds.to(dtype=sdxl_pipeline.text_encoder_2.dtype)
 
-        # 3. 替换 SDXL 的文本嵌入 (pooled_embeds and text_embeds)
-        # 注意：这里直接设置，绕过了 SDXL 内部的 embedding 获取过程.
-        prompt_embeds = adapter_emb
-        hidden_size = sdxl_pipeline.text_encoder_2.config.hidden_size
-        pooled_prompt_embeds = torch.randn(1, hidden_size, device=device, dtype=sdxl_pipeline.text_encoder_2.dtype)
-        print(f"prompt_embeds: {prompt_embeds.shape}, pooled_prompt_embeds: {pooled_prompt_embeds.shape}")
-         # 生成图像
-        image = sdxl_pipeline(prompt_embeds=prompt_embeds, pooled_prompt_embeds=pooled_prompt_embeds, output_type="pil").images[0]
+
+        # 3. 使用 Adapter 输出的 embeddings 生成图像
+        image = sdxl_pipeline(
+            prompt_embeds=adapter_prompt_embeds,  # 使用 adapter_prompt_embeds
+            pooled_prompt_embeds=adapter_pooled_prompt_embeds, # 使用 adapter_pooled_prompt_embeds
+            output_type="pil"
+        ).images[0]
     else:
-       # 使用原始 SDXL 生成图像
+       # 使用原始 SDXL 生成图像 (保持不变)
         image = sdxl_pipeline(prompt=prompt, output_type="pil").images[0]
 
 

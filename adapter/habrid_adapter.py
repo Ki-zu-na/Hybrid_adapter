@@ -66,26 +66,31 @@ class HybridAdapter(nn.Module):
         mlp_hidden_dim: int = 4096, # MLP中间层维度
         num_transformer_layers: int = 3, # Transformer层数
         num_attention_heads: int = 8,    # 注意力头数
-        dropout: float = 0.1       # 防止过拟合
+        dropout: float = 0.1,       # 防止过拟合
+        clip_l_dim: int = 768,      # CLIP ViT-L/14 输出维度
+        clip_h_dim: int = 1280     # CLIP ViT-H/14 输出维度
     ):
         super().__init__()
         self.seq_len = seq_len
-        
+        self.clip_l_dim = clip_l_dim
+        self.clip_h_dim = clip_h_dim
+        self.output_dim = clip_l_dim + clip_h_dim # 总输出维度
+
         # Stage 1: MLP进行非线性变换
         self.mlp = nn.Sequential(
             nn.Linear(input_dim, mlp_hidden_dim),
             nn.GELU(),
             nn.LayerNorm(mlp_hidden_dim),
             nn.Dropout(dropout),
-            nn.Linear(mlp_hidden_dim, input_dim),
+            nn.Linear(mlp_hidden_dim, input_dim), # 注意这里仍然输出到 input_dim
             nn.LayerNorm(input_dim)
         )
-        
+
         # Stage 2: 可学习的位置编码（用于扩展为序列）
         self.position_embed = nn.Parameter(
             torch.randn(1, seq_len, input_dim) * 0.02
         )
-        
+
         # Stage 3: Transformer Blocks with Cross-Attention
         self.transformer_blocks = nn.ModuleList([
             TransformerBlockWithCrossAttn(
@@ -96,6 +101,9 @@ class HybridAdapter(nn.Module):
             )
             for _ in range(num_transformer_layers)
         ])
+
+        # Stage 4:  输出层 - 修改为输出总共 2048 维度 (768 + 1280)
+        self.output_proj = nn.Linear(input_dim, self.output_dim) # 输出维度改为总维度
 
         self._init_weights()
 
@@ -118,6 +126,9 @@ class HybridAdapter(nn.Module):
                     nn.init.xavier_uniform_(m.weight)
                     if m.bias is not None:
                         nn.init.zeros_(m.bias)
+                        
+        nn.init.xavier_uniform_(self.output_proj.weight) # 使用 xavier_uniform 初始化
+        nn.init.zeros_(self.output_proj.bias)
         
     def extend_positional_encoding(self, new_seq_len: int) -> torch.Tensor:
         """
@@ -137,17 +148,18 @@ class HybridAdapter(nn.Module):
         ).transpose(1, 2)
         return new_pos_embed
             
-    def forward(self, x: torch.Tensor, cross_attn_input: torch.Tensor = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, cross_attn_input: torch.Tensor = None) -> tuple[torch.Tensor, torch.Tensor]:
         """
         输入:
-            x: [batch_size, num_tokens, input_dim] (当LLM输出多个token时)
-            或 [batch_size, input_dim] (单token输出)
+            x: [batch_size, num_tokens, input_dim] (当LLM输出多个token时) 或 [batch_size, input_dim] (单token输出)
             cross_attn_input: [batch_size, seq_length_context, input_dim] (可选外部上下文信息)
         输出:
-            [batch_size, seq_len, input_dim] (适配后的条件序列)
+            tuple: (prompt_embeds, pooled_prompt_embeds)
+                - prompt_embeds: [batch_size, seq_len, clip_l_dim + clip_h_dim]  (拼接后的 prompt embeddings)
+                - pooled_prompt_embeds: [batch_size, clip_h_dim] (CLIP ViT-H/14 维度的 pooled embedding)
         """
         batch_size = x.shape[0]
-        
+
         # 如果输入只有单个token，则扩展为序列
         if x.ndim == 2:
             x = x.unsqueeze(1)  # [batch, 1, input_dim]
@@ -156,15 +168,22 @@ class HybridAdapter(nn.Module):
             # 如果输入 token 数与期望的不一致，可以通过插值或其他方式调整
             # 这里假设输入token数和 self.seq_len 一致，否则需要额外处理
             pass
-        
+
         # 添加（或更新）位置编码
         x = x + self.position_embed
-        
+
         # 通过MLP进行初步非线性变换
         x = self.mlp(x)
-        
+
         # 通过Transformer Blocks，传入可选的 cross attention 信息
         for block in self.transformer_blocks:
             x = block(x, cross_attn_input=cross_attn_input)
-        
-        return x  # [batch, seq_len, input_dim]
+
+        # 通过输出层得到最终的 embedding
+        adapter_output = self.output_proj(x) # [batch_size, seq_len, clip_l_dim + clip_h_dim]
+
+        # 分割输出以获得 prompt_embeds 和 pooled_prompt_embeds
+        prompt_embeds = adapter_output # 整个输出作为 prompt_embeds
+        pooled_prompt_embeds = adapter_output[:, :, :self.clip_h_dim].mean(dim=1) # 取前 1280 维，并沿 seq_len 平均池化
+
+        return prompt_embeds, pooled_prompt_embeds # 返回两个 embeddings
