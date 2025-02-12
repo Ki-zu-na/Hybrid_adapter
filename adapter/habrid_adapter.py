@@ -68,13 +68,13 @@ class HybridAdapter(nn.Module):
         num_attention_heads: int = 8,    # 注意力头数
         dropout: float = 0.1,       # 防止过拟合
         clip_l_dim: int = 768,      # CLIP ViT-L/14 输出维度
-        clip_h_dim: int = 1280     # CLIP ViT-H/14 输出维度
+        clip_g_dim: int = 1280     # OpenCLIP ViT-bigG/14 输出维度
     ):
         super().__init__()
         self.seq_len = seq_len
         self.clip_l_dim = clip_l_dim
-        self.clip_h_dim = clip_h_dim
-        self.output_dim = clip_l_dim + clip_h_dim # 总输出维度
+        self.clip_g_dim = clip_g_dim
+        self.output_dim = clip_l_dim + clip_g_dim # 总输出维度
 
         # Stage 1: MLP进行非线性变换
         self.mlp = nn.Sequential(
@@ -180,10 +180,10 @@ class HybridAdapter(nn.Module):
             x = block(x, cross_attn_input=cross_attn_input)
 
         # 通过输出层得到最终的 embedding
-        adapter_output = self.output_proj(x) # [batch_size, seq_len, clip_l_dim + clip_h_dim]
+        adapter_output = self.output_proj(x) # [batch_size, seq_len, clip_l_dim + clip_g_dim]
 
         # 分割输出以获得 prompt_embeds 和 pooled_prompt_embeds
         prompt_embeds = adapter_output # 整个输出作为 prompt_embeds
-        pooled_prompt_embeds = adapter_output[:, :, :self.clip_h_dim].mean(dim=1) # 取前 1280 维，并沿 seq_len 平均池化
+        pooled_prompt_embeds = adapter_output[:, :, self.clip_l_dim:].mean(dim=1) # 取后 1280 维，并沿 seq_len 平均池化
 
         return prompt_embeds, pooled_prompt_embeds # 返回两个 embeddings
