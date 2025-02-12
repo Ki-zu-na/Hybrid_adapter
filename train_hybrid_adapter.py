@@ -90,7 +90,8 @@ def train(config_path):
 
     # 优化器和损失函数
     optimizer = optim.AdamW(adapter_model.parameters(), lr=lr, weight_decay=1e-2)  # 添加 weight_decay
-    criterion = nn.MSELoss()
+    criterion_prompt = nn.MSELoss()  # prompt_embeds 的损失
+    criterion_pooled = nn.MSELoss()  # pooled_prompt_embeds 的损失
     # 学习率调度器
     num_training_steps = num_epochs * (len(JSONAdapterDataset(json_data_path, llama_tokenizer, llama_model, sdxl_model_path, device)) // (batch_size * gradient_accumulation_steps))
     lr_scheduler = get_cosine_with_hard_restarts_schedule_with_warmup(
@@ -209,13 +210,20 @@ def train(config_path):
             with torch.cuda.amp.autocast(enabled=(scaler is not None)):
                 if use_cross_attn:
                     adapter_prompt_embeds, adapter_pooled_prompt_embeds = adapter_model(llama_output, cross_attn_input=prompt_embeds)  # 获取两个输出
-                    output_te = adapter_prompt_embeds # 训练时我们主要监督 prompt_embeds 部分
+                    output_te_prompt = adapter_prompt_embeds # 用于计算 prompt_loss
+                    output_te_pooled = adapter_pooled_prompt_embeds # 用于计算 pooled_loss
                 else:
                     adapter_prompt_embeds, adapter_pooled_prompt_embeds = adapter_model(llama_output) # 获取两个输出
-                    output_te = adapter_prompt_embeds # 训练时我们主要监督 prompt_embeds 部分
+                    output_te_prompt = adapter_prompt_embeds # 用于计算 prompt_loss
+                    output_te_pooled = adapter_pooled_prompt_embeds # 用于计算 pooled_loss
 
-                loss = criterion(output_te, prompt_embeds)  # 将 Adapter 的 prompt_embeds 输出与拼接后的 prompt_embeds 计算损失
-                loss = loss / gradient_accumulation_steps
+                # 分别计算 prompt_embeds 和 pooled_prompt_embeds 的损失
+                prompt_loss = criterion_prompt(output_te_prompt, prompt_embeds)
+                pooled_loss = criterion_pooled(output_te_pooled, pooled_prompt_embeds)
+
+                # 将两个损失加权求和，得到总损失 (你可以调整权重)
+                total_loss = prompt_loss + pooled_loss #  简单的加和，你可以尝试加权，例如： total_loss = prompt_loss + 0.5 * pooled_loss
+                loss = total_loss / gradient_accumulation_steps # 梯度累积需要除以步数
 
             if scaler is not None:
                 scaler.scale(loss).backward()
@@ -237,16 +245,18 @@ def train(config_path):
                 optimizer.zero_grad()
                 global_step += 1
 
-                # 使用 wandb 记录训练的 loss 和 lr
+                # 使用 wandb 记录训练的 loss 和 lr (修改 wandb 日志)
                 wandb.log({
-                    "train_loss": loss.item() * gradient_accumulation_steps,
+                    "train_prompt_loss": prompt_loss.item() * gradient_accumulation_steps, # 记录 prompt_loss
+                    "train_pooled_loss": pooled_loss.item() * gradient_accumulation_steps, # 记录 pooled_loss
+                    "train_total_loss": total_loss.item() * gradient_accumulation_steps, # 记录 total_loss
                     "lr": lr_scheduler.get_last_lr()[0],
                     "global_step": global_step,
                     "epoch": epoch + 1
                 }, step=global_step)
 
-            epoch_loss += loss.item() * gradient_accumulation_steps * llama_output.size(0)
-            progress.set_postfix(loss=loss.item() * gradient_accumulation_steps, lr=lr_scheduler.get_last_lr()[0])
+            epoch_loss += total_loss.item() * gradient_accumulation_steps * llama_output.size(0) # epoch_loss 也要累加 total_loss
+            progress.set_postfix(total_loss=total_loss.item() * gradient_accumulation_steps, lr=lr_scheduler.get_last_lr()[0]) # progress bar 显示 total_loss
 
             # 采样，并记录 sample 到 wandb
             if global_step % sample_every_n_steps == 0 :
