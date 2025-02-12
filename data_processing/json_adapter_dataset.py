@@ -162,8 +162,8 @@ class JSONAdapterDataset(Dataset):
             text_encoder_l = self.sdxl_model.text_encoder
             text_encoder_g = self.sdxl_model.text_encoder_2
 
-            max_length_l = tokenizer_l.model_max_length - 2
-            max_length_g = tokenizer_g.model_max_length - 2
+            max_length_l = tokenizer_l.model_max_length - 1
+            max_length_g = tokenizer_g.model_max_length - 1
 
             # 分割 prompt 成段落，保证每段不超过 tokenizer 的最大长度
             prompt_chunks_l = self._chunk_prompt(new_prompt, tokenizer_l, max_length_l)
@@ -180,7 +180,7 @@ class JSONAdapterDataset(Dataset):
                     chunk,
                     padding="max_length",
                     max_length=max_length_l,
-                    truncation=True, #  重要：这里设置为 True，截断，我们已经分段了
+                    truncation=False, #  重要：这里设置为 False，不要截断，我们已经分段了
                     return_tensors="pt",
                 )
                 encoded_input_l = {k: v.to(self.device) for k, v in encoded_input_l.items()}
@@ -197,7 +197,7 @@ class JSONAdapterDataset(Dataset):
                     chunk,
                     padding="max_length",
                     max_length=max_length_g,
-                    truncation=True, # 重要：这里设置为 True，截断，我们已经分段了
+                    truncation=False, # 重要：这里设置为 False，不要截断，我们已经分段了
                     return_tensors="pt",
                 )
                 encoded_input_g = {k: v.to(self.device) for k, v in encoded_input_g.items()}
@@ -231,6 +231,9 @@ class JSONAdapterDataset(Dataset):
         将长文本 prompt 分割成多个段落，每个段落长度不超过 max_length。
         """
         tokens = tokenizer.tokenize(prompt_text)
+        if not tokens:
+           # 如果 token 列表为空，则返回原始 prompt，保证 downstream 不为空
+           return [prompt_text]
         chunks = []
         current_chunk_tokens = []
         for token in tokens:
