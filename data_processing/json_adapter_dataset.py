@@ -157,33 +157,87 @@ class JSONAdapterDataset(Dataset):
 
         # 使用官方方式计算 SDXL 文本嵌入 (同时获取 text_encoder 和 text_encoder_2 的 embedding)
         with torch.no_grad():
-            encoded_input = self.sdxl_model.tokenizer(
-                new_prompt,
-                padding="max_length",
-                truncation=True,
-                max_length=self.sdxl_model.tokenizer.model_max_length,
-                return_tensors="pt"
-            )
-            encoded_input = {key: value.to(self.device) for key, value in encoded_input.items()}
+            tokenizer_l = self.sdxl_model.tokenizer
+            tokenizer_g = self.sdxl_model.tokenizer_2
+            text_encoder_l = self.sdxl_model.text_encoder
+            text_encoder_g = self.sdxl_model.text_encoder_2
 
-            # 获取 text_encoder (CLIP ViT-L/14) 的 embedding
-            text_outputs = self.sdxl_model.text_encoder(**encoded_input, output_hidden_states=True) # 明确添加 output_hidden_states=True
-            prompt_embeds_clip_l = text_outputs.hidden_states[-2]
+            max_length_l = tokenizer_l.model_max_length
+            max_length_g = tokenizer_g.model_max_length
 
-            pooled_prompt_embeds_clip_l = prompt_embeds_clip_l.mean(dim=1, keepdim=True)
-            prompt_embeds_clip_l = prompt_embeds_clip_l.squeeze(0)
-            pooled_prompt_embeds_clip_l = pooled_prompt_embeds_clip_l.reshape(-1) # 明确 reshape 为 1D
+            # 分割 prompt 成段落，保证每段不超过 tokenizer 的最大长度
+            prompt_chunks_l = self._chunk_prompt(new_prompt, tokenizer_l, max_length_l)
+            prompt_chunks_g = self._chunk_prompt(new_prompt, tokenizer_g, max_length_g)
 
-            # 获取 text_encoder_2 (OpenCLIP ViT-bigG/14) 的 embedding
-            text_outputs_2 = self.sdxl_model.text_encoder_2(**encoded_input, output_hidden_states=True) # 明确添加 output_hidden_states=True
-            prompt_embeds_clip_g = text_outputs_2.hidden_states[-2]
+            prompt_embeds_clip_l_list = []
+            pooled_prompt_embeds_clip_l_list = []
+            prompt_embeds_clip_g_list = []
+            pooled_prompt_embeds_clip_g_list = []
 
-            pooled_prompt_embeds_clip_g = prompt_embeds_clip_g.mean(dim=1, keepdim=True)
-            prompt_embeds_clip_g = prompt_embeds_clip_g.squeeze(0)
-            pooled_prompt_embeds_clip_g = pooled_prompt_embeds_clip_g.reshape(-1) # 明确 reshape 为 1D
+            # 循环处理每个 prompt 段落 (CLIP ViT-L/14)
+            for chunk in prompt_chunks_l:
+                encoded_input_l = tokenizer_l(
+                    chunk,
+                    padding="max_length",
+                    max_length=max_length_l,
+                    truncation=False, #  重要：这里设置为 False，不要截断，我们已经分段了
+                    return_tensors="pt",
+                )
+                encoded_input_l = {k: v.to(self.device) for k, v in encoded_input_l.items()}
+                text_outputs_l = text_encoder_l(**encoded_input_l, output_hidden_states=True)
+                prompt_embeds_clip_l = text_outputs_l.hidden_states[-2]
+                pooled_prompt_embeds_clip_l = text_outputs_l[0]
 
-            # Concatenate prompt embeddings
-            concatenated_prompt_embeds = torch.cat((prompt_embeds_clip_l, prompt_embeds_clip_g), dim=-1)
-            #concatenated_pooled_prompt_embeds = torch.cat((pooled_prompt_embeds_clip_l, pooled_prompt_embeds_clip_g), dim=-1)
+                prompt_embeds_clip_l_list.append(prompt_embeds_clip_l)
+                pooled_prompt_embeds_clip_l_list.append(pooled_prompt_embeds_clip_l)
+
+            # 循环处理每个 prompt 段落 (CLIP ViT-bigG/14)
+            for chunk in prompt_chunks_g:
+                encoded_input_g = tokenizer_g(
+                    chunk,
+                    padding="max_length",
+                    max_length=max_length_g,
+                    truncation=False, # 重要：这里设置为 False，不要截断，我们已经分段了
+                    return_tensors="pt",
+                )
+                encoded_input_g = {k: v.to(self.device) for k, v in encoded_input_g.items()}
+                text_outputs_g = text_encoder_g(**encoded_input_g, output_hidden_states=True)
+                prompt_embeds_clip_g = text_outputs_g.hidden_states[-2]
+                pooled_prompt_embeds_clip_g = text_outputs_g[0]
+
+                prompt_embeds_clip_g_list.append(prompt_embeds_clip_g)
+                pooled_prompt_embeds_clip_g_list.append(pooled_prompt_embeds_clip_g)
+
+            # 拼接所有段落的 prompt embeddings (在序列长度维度上)
+            concatenated_prompt_embeds_l = torch.cat(prompt_embeds_clip_l_list, dim=1) # [1, seq_len_total_l, hidden_dim_l]
+            concatenated_prompt_embeds_g = torch.cat(prompt_embeds_clip_g_list, dim=1) # [1, seq_len_total_g, hidden_dim_g]
+
+            # 简单平均池化所有段落的 pooled prompt embeddings
+            pooled_prompt_embeds_clip_l = torch.cat(pooled_prompt_embeds_clip_l_list, dim=1).mean(dim=1) # [1, hidden_dim_l]
+            pooled_prompt_embeds_clip_g = torch.cat(pooled_prompt_embeds_clip_g_list, dim=1).mean(dim=1) # [1, hidden_dim_g]
+
+            # 拼接 CLIP-L 和 CLIP-G 的 prompt embeddings
+            concatenated_prompt_embeds = torch.cat((concatenated_prompt_embeds_l.squeeze(0), concatenated_prompt_embeds_g.squeeze(0)), dim=-1) # [seq_len_total, hidden_dim_l + hidden_dim_g]
+            #concatenated_pooled_prompt_embeds = torch.cat((pooled_prompt_embeds_clip_l.reshape(-1), pooled_prompt_embeds_clip_g.reshape(-1)), dim=-1) # [hidden_dim_l + hidden_dim_g]
+
+
+        # 计算 Llama embedding (保持不变)
+        llama_emb = get_llama_embedding(new_prompt, self.tokenizer, self.llama_model, self.device)
 
         return llama_emb, (concatenated_prompt_embeds, pooled_prompt_embeds_clip_g) # 返回拼接后的 embedding
+
+    def _chunk_prompt(self, prompt_text, tokenizer, max_length):
+        """
+        将长文本 prompt 分割成多个段落，每个段落长度不超过 max_length。
+        """
+        tokens = tokenizer.tokenize(prompt_text)
+        chunks = []
+        current_chunk_tokens = []
+        for token in tokens:
+            current_chunk_tokens.append(token)
+            if len(current_chunk_tokens) >= max_length:
+                chunks.append(tokenizer.convert_tokens_to_string(current_chunk_tokens))
+                current_chunk_tokens = []
+        if current_chunk_tokens: # 处理最后剩余的 chunk
+            chunks.append(tokenizer.convert_tokens_to_string(current_chunk_tokens))
+        return chunks
