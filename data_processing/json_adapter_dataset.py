@@ -162,8 +162,8 @@ class JSONAdapterDataset(Dataset):
             text_encoder_l = self.sdxl_model.text_encoder
             text_encoder_g = self.sdxl_model.text_encoder_2
 
-            max_length_l = tokenizer_l.model_max_length - 2
-            max_length_g = tokenizer_g.model_max_length - 2
+            max_length_l = tokenizer_l.model_max_length - 4
+            max_length_g = tokenizer_g.model_max_length - 4
 
             # 分割 prompt 成段落，保证每段不超过 tokenizer 的最大长度
             prompt_chunks_l = self._chunk_prompt(new_prompt, tokenizer_l, max_length_l)
