@@ -58,8 +58,8 @@ def sample_images(sdxl_pipeline, adapter_model, llama_tokenizer, llama_model, pr
         text_encoder_l = sdxl_pipeline.text_encoder
         text_encoder_g = sdxl_pipeline.text_encoder_2
 
-        max_length_l = tokenizer_l.model_max_length - 1
-        max_length_g = tokenizer_g.model_max_length - 1
+        max_length_l = tokenizer_l.model_max_length - 2
+        max_length_g = tokenizer_g.model_max_length - 2
 
         # 分割 prompt 成段落，保证每段不超过 tokenizer 的最大长度
         prompt_chunks_l = _chunk_prompt(prompt, tokenizer_l, max_length_l)
