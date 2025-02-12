@@ -255,7 +255,13 @@ class JSONAdapterDataset(Dataset):
             prompt_embeds_l = prompt_embeds_l[:, :target_length, :]
         if prompt_embeds_g.shape[1] > target_length:
             prompt_embeds_g = prompt_embeds_g[:, :target_length, :]
+
+
         concat_prompt_embeds = torch.cat((prompt_embeds_l, prompt_embeds_g), dim=-1)
+
+        max_combined_length = target_length  # 或者你可以定义一个单独的最大组合长度
+        if concat_prompt_embeds.shape[1] > max_combined_length:
+             concat_prompt_embeds = concat_prompt_embeds[:,:max_combined_length,:]
         return llama_emb, (concat_prompt_embeds, pooled_prompt_embeds_g) # 返回 chunked 的 prompt_embeds和 pooled_prompt_embeds_g
 
 
