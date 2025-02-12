@@ -75,7 +75,7 @@ def sample_images(sdxl_pipeline, adapter_model, llama_tokenizer, llama_model, pr
             device,
             max_length_g
         )
-        concat_prompt_embeds = torch.cat((prompt_embeds_clip_l ,prompt_embeds_clip_g), dim=1)
+        concat_prompt_embeds = torch.cat((prompt_embeds_clip_l ,prompt_embeds_clip_g), dim=-1) 
 
         image = sdxl_pipeline(
             prompt_embeds=concat_prompt_embeds,

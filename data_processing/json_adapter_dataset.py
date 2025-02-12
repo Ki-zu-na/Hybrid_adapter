@@ -209,9 +209,9 @@ class JSONAdapterDataset(Dataset):
         prompt_embeds_l, _ = get_prompt_embeddings_chunked(prompt, tokenizer_l, text_encoder_l, self.device, max_length_l)
 
         # CLIP ViT-bigG/14 embeddings (只需要 pooled)
-        _, pooled_prompt_embeds_g = get_prompt_embeddings_chunked(prompt, tokenizer_g, text_encoder_g, self.device, max_length_g)
+        prompt_embeds_g, pooled_prompt_embeds_g = get_prompt_embeddings_chunked(prompt, tokenizer_g, text_encoder_g, self.device, max_length_g)
 
-        concat_prompt_embeds = torch.cat((prompt_embeds_l, pooled_prompt_embeds_g), dim=1)
+        concat_prompt_embeds = torch.cat((prompt_embeds_l, prompt_embeds_g), dim=-1)
         return llama_emb, (concat_prompt_embeds, pooled_prompt_embeds_g) # 返回 chunked 的 prompt_embeds和 pooled_prompt_embeds_g
 
 
