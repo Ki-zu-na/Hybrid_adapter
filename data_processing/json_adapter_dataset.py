@@ -44,9 +44,9 @@ def get_prompt_embeddings_chunked(prompt, tokenizer, text_encoder, device, max_l
 
     concatenated_prompt_embeds = torch.cat(prompt_embeds_list, dim=1) if prompt_embeds_list else None # 拼接 prompt_embeds
     # pooled_prompt_embeds 可以选择最后一个 chunk 的，或者平均，这里选择平均
-    pooled_prompt_embeds = torch.cat(pooled_prompt_embeds_list, dim=1) if pooled_prompt_embeds_list else None
-    pooled_prompt_embeds = pooled_prompt_embeds.squeeze(0)
-    print(pooled_prompt_embeds.shape, pooled_prompt_embeds.shape)
+    pooled_prompt_embeds = torch.stack(pooled_prompt_embeds_list, dim=0) if pooled_prompt_embeds_list else None
+    pooled_prompt_embeds = pooled_prompt_embeds.mean(dim=0)
+    print(concatenated_prompt_embeds.shape, pooled_prompt_embeds.shape)
     return concatenated_prompt_embeds, pooled_prompt_embeds
 class JSONAdapterDataset(Dataset):
     """
