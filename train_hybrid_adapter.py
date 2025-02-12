@@ -98,7 +98,7 @@ def train(config_path):
         optimizer=optimizer,
         num_warmup_steps=100,  # 100的训练步数用于预热
         num_training_steps=num_training_steps,
-        num_cycles=10
+        num_cycles=20
     )
 
     # 使用 JSONAdapterDataset 加载 JSON 数据
