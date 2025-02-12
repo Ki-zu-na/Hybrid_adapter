@@ -7,7 +7,46 @@ from torch.nn.utils.rnn import pad_sequence
 from diffusers import StableDiffusionXLPipeline
 from utils.embedding import get_llama_embedding
 
+def _chunk_prompt_simple(prompt_text, tokenizer, max_length): # 简化版的 chunk_prompt
+    tokens = tokenizer.tokenize(prompt_text)
+    chunks = []
+    current_chunk_tokens = []
+    for token in tokens:
+        current_chunk_tokens.append(token)
+        if len(current_chunk_tokens) >= max_length:
+            chunks.append(tokenizer.convert_tokens_to_string(current_chunk_tokens))
+            current_chunk_tokens = []
+    if current_chunk_tokens:
+        chunks.append(tokenizer.convert_tokens_to_string(current_chunk_tokens))
+    return chunks
 
+
+def get_prompt_embeddings_chunked(prompt, tokenizer, text_encoder, device, max_length):
+    prompt_chunks = _chunk_prompt_simple(prompt, tokenizer, max_length)
+    prompt_embeds_list = []
+    pooled_prompt_embeds_list = []
+
+    for chunk in prompt_chunks:
+        encoded_input = tokenizer(
+            chunk,
+            padding="max_length",
+            max_length=max_length,
+            truncation=False, # 不要截断，我们已经分段了
+            return_tensors="pt",
+        )
+        encoded_input = {k: v.to(device) for k, v in encoded_input.items()}
+        text_outputs = text_encoder(**encoded_input, output_hidden_states=True)
+        prompt_embeds = text_outputs.hidden_states[-2]
+        pooled_prompt_embeds = text_outputs.pooler_output if hasattr(text_outputs, 'pooler_output') else text_outputs[0] # 兼容不同 CLIP 版本
+
+        prompt_embeds_list.append(prompt_embeds)
+        pooled_prompt_embeds_list.append(pooled_prompt_embeds)
+
+    concatenated_prompt_embeds = torch.cat(prompt_embeds_list, dim=1) if prompt_embeds_list else None # 拼接 prompt_embeds
+    # pooled_prompt_embeds 可以选择最后一个 chunk 的，或者平均，这里选择平均
+    pooled_prompt_embeds = (torch.cat(pooled_prompt_embeds_list, dim=1)).mean(dim=1, keepdim=True) if pooled_prompt_embeds_list else None
+
+    return concatenated_prompt_embeds, pooled_prompt_embeds
 class JSONAdapterDataset(Dataset):
     """
     使用 JSON 数据来动态生成 Llama 与 SDXL CLIP 的 embedding.
@@ -152,99 +191,29 @@ class JSONAdapterDataset(Dataset):
         new_prompt = ", ".join(fixed_tags + flex_tags)
         if not new_prompt:
             new_prompt = ""
-
+        example = self.dataset[idx]
+        prompt = example["prompt"]
         # 计算 Llama embedding
         llama_emb = get_llama_embedding(new_prompt, self.tokenizer, self.llama_model, self.device)
 
         # 使用官方方式计算 SDXL 文本嵌入 (同时获取 text_encoder 和 text_encoder_2 的 embedding)
-        with torch.no_grad():
-            tokenizer_l = self.sdxl_model.tokenizer
-            tokenizer_g = self.sdxl_model.tokenizer_2
-            text_encoder_l = self.sdxl_model.text_encoder
-            text_encoder_g = self.sdxl_model.text_encoder_2
+        tokenizer_l = self.tokenizer_l # CLIP ViT-L/14 tokenizer
+        tokenizer_g = self.tokenizer_g # CLIP ViT-bigG/14 tokenizer
+        text_encoder_l = self.text_encoder_l # CLIP ViT-L/14 text encoder
+        text_encoder_g = self.text_encoder_g # CLIP ViT-bigG/14 text encoder
 
-            max_length_l = tokenizer_l.model_max_length - 2
-            max_length_g = tokenizer_g.model_max_length - 2
+        max_length_l = tokenizer_l.model_max_length -2
+        max_length_g = tokenizer_g.model_max_length -2
 
-            # 分割 prompt 成段落，保证每段不超过 tokenizer 的最大长度
-            prompt_chunks_l = self._chunk_prompt(new_prompt, tokenizer_l, max_length_l)
-            prompt_chunks_g = self._chunk_prompt(new_prompt, tokenizer_g, max_length_g)
+        # CLIP ViT-L/14 embeddings
+        prompt_embeds_l, _ = get_prompt_embeddings_chunked(prompt, tokenizer_l, text_encoder_l, self.device, max_length_l)
 
-            prompt_embeds_clip_l_list = []
-            pooled_prompt_embeds_clip_l_list = []
-            prompt_embeds_clip_g_list = []
-            pooled_prompt_embeds_clip_g_list = []
+        # CLIP ViT-bigG/14 embeddings (只需要 pooled)
+        _, pooled_prompt_embeds_g = get_prompt_embeddings_chunked(prompt, tokenizer_g, text_encoder_g, self.device, max_length_g)
 
-            # 循环处理每个 prompt 段落 (CLIP ViT-L/14)
-            for chunk in prompt_chunks_l:
-                encoded_input_l = tokenizer_l(
-                    chunk,
-                    padding="max_length",
-                    max_length=max_length_l,
-                    truncation=True, #  重要：这里设置为 True，截断，我们已经分段了
-                    return_tensors="pt",
-                )
-                encoded_input_l = {k: v.to(self.device) for k, v in encoded_input_l.items()}
-                text_outputs_l = text_encoder_l(**encoded_input_l, output_hidden_states=True)
-                prompt_embeds_clip_l = text_outputs_l.hidden_states[-2]
-                pooled_prompt_embeds_clip_l = text_outputs_l[0]
+        concat_prompt_embeds = torch.cat((prompt_embeds_l, pooled_prompt_embeds_g), dim=1)
+        return llama_emb, (concat_prompt_embeds, pooled_prompt_embeds_g) # 返回 chunked 的 prompt_embeds和 pooled_prompt_embeds_g
 
-                prompt_embeds_clip_l_list.append(prompt_embeds_clip_l)
-                pooled_prompt_embeds_clip_l_list.append(pooled_prompt_embeds_clip_l)
-
-            # 循环处理每个 prompt 段落 (CLIP ViT-bigG/14)
-            for chunk in prompt_chunks_g:
-                encoded_input_g = tokenizer_g(
-                    chunk,
-                    padding="max_length",
-                    max_length=max_length_g,
-                    truncation=True, # 重要：这里设置为 True，截断，我们已经分段了
-                    return_tensors="pt",
-                )
-                encoded_input_g = {k: v.to(self.device) for k, v in encoded_input_g.items()}
-                text_outputs_g = text_encoder_g(**encoded_input_g, output_hidden_states=True)
-                prompt_embeds_clip_g = text_outputs_g.hidden_states[-2]
-                pooled_prompt_embeds_clip_g = text_outputs_g[0]
-
-                prompt_embeds_clip_g_list.append(prompt_embeds_clip_g)
-                pooled_prompt_embeds_clip_g_list.append(pooled_prompt_embeds_clip_g)
-
-            # 拼接所有段落的 prompt embeddings (在序列长度维度上)
-            concatenated_prompt_embeds_l = torch.cat(prompt_embeds_clip_l_list, dim=1) # [1, seq_len_total_l, hidden_dim_l]
-            concatenated_prompt_embeds_g = torch.cat(prompt_embeds_clip_g_list, dim=1) # [1, seq_len_total_g, hidden_dim_g]
-
-            # 简单平均池化所有段落的 pooled prompt embeddings
-            pooled_prompt_embeds_clip_l = concatenated_prompt_embeds_l.mean(dim=1, keepdim=True) # [1, hidden_dim_l]
-            pooled_prompt_embeds_clip_g = concatenated_prompt_embeds_g.mean(dim=1, keepdim=True) # [1, hidden_dim_g]
-
-            # 拼接 CLIP-L 和 CLIP-G 的 prompt embeddings
-            concatenated_prompt_embeds = torch.cat((concatenated_prompt_embeds_l.squeeze(0), concatenated_prompt_embeds_g.squeeze(0)), dim=-1) # [seq_len_total, hidden_dim_l + hidden_dim_g]
-            #concatenated_pooled_prompt_embeds = torch.cat((pooled_prompt_embeds_clip_l.reshape(-1), pooled_prompt_embeds_clip_g.reshape(-1)), dim=-1) # [hidden_dim_l + hidden_dim_g]
-
-
-        # 计算 Llama embedding (保持不变)
-        llama_emb = get_llama_embedding(new_prompt, self.tokenizer, self.llama_model, self.device)
-
-        return llama_emb, (concatenated_prompt_embeds, pooled_prompt_embeds_clip_g) # 返回拼接后的 embedding
-
-    def _chunk_prompt(self, prompt_text, tokenizer, max_length):
-        """
-        将长文本 prompt 分割成多个段落，每个段落长度不超过 max_length。
-        """
-        tokens = tokenizer.tokenize(prompt_text)
-        if not tokens:
-           # 如果 token 列表为空，则返回原始 prompt，保证 downstream 不为空
-           return [prompt_text]
-        chunks = []
-        current_chunk_tokens = []
-        for token in tokens:
-            current_chunk_tokens.append(token)
-            if len(current_chunk_tokens) >= max_length:
-                chunks.append(tokenizer.convert_tokens_to_string(current_chunk_tokens))
-                current_chunk_tokens = []
-        if current_chunk_tokens: # 处理最后剩余的 chunk
-            chunks.append(tokenizer.convert_tokens_to_string(current_chunk_tokens))
-        return chunks
 
 def custom_collate_fn(batch):
     """
