@@ -188,6 +188,6 @@ class JSONAdapterDataset(Dataset):
 
             # Concatenate prompt embeddings
             concatenated_prompt_embeds = torch.cat((prompt_embeds_clip_l, prompt_embeds_clip_h), dim=-1)
-            concatenated_pooled_prompt_embeds = torch.cat((pooled_prompt_embeds_clip_l, pooled_prompt_embeds_clip_h), dim=-1)
+            #concatenated_pooled_prompt_embeds = torch.cat((pooled_prompt_embeds_clip_l, pooled_prompt_embeds_clip_h), dim=-1)
 
-        return llama_emb, (concatenated_prompt_embeds, concatenated_pooled_prompt_embeds) # 返回拼接后的 embedding
+        return llama_emb, (concatenated_prompt_embeds, pooled_prompt_embeds_clip_h) # 返回拼接后的 embedding
