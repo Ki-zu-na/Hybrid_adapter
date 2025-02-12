@@ -13,14 +13,28 @@ from transformers import CLIPTokenizer, CLIPTextModel
 def _chunk_prompt_simple(prompt: str, tokenizer: CLIPTokenizer, max_length: int):
     """
     将 prompt 简单地分割成多个不超过 max_length 的子块。
-    使用 tokenizer.encode 获取 token ID 列表，不添加特殊 token。
+    直接切分文本, 不需要手动处理 token ID 和特殊 token。
     """
-    tokens = tokenizer.encode(prompt, add_special_tokens=False)
-    chunk_size = max_length - 2  # 留出空间给 bos 和 eos
+    words = prompt.split()
     chunks = []
-    for i in range(0, len(tokens), chunk_size):
-        chunk = [tokenizer.bos_token_id] + tokens[i:i + chunk_size] + [tokenizer.eos_token_id]
-        chunks.append(tokenizer.decode(chunk))
+    current_chunk = []
+    current_length = 0
+
+    for word in words:
+        encoded_word = tokenizer.encode(word, add_special_tokens=False)
+        word_length = len(encoded_word)
+
+        if current_length + word_length + len(current_chunk) > max_length - 2:  # 考虑空格和 BOS/EOS
+            chunks.append(" ".join(current_chunk))
+            current_chunk = []
+            current_length = 0
+
+        current_chunk.append(word)
+        current_length += word_length
+
+    if current_chunk:
+        chunks.append(" ".join(current_chunk))
+
     return chunks
     
 
