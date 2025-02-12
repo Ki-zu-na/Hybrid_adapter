@@ -82,10 +82,6 @@ def sample_images(sdxl_pipeline, adapter_model, llama_tokenizer, llama_model, pr
             encoded_input_l = {k: v.to(device) for k, v in encoded_input_l.items()}
             text_outputs_l = text_encoder_l(**encoded_input_l, output_hidden_states=True)
             prompt_embeds_clip_l = text_outputs_l.hidden_states[-2]
-            # 如果最后一维不等于预期的 hidden_size，则截断多余的部分
-            expected_hidden_size = sdxl_pipeline.text_encoder.config.hidden_size
-            if prompt_embeds_clip_l.size(-1) != expected_hidden_size:
-                prompt_embeds_clip_l = prompt_embeds_clip_l[..., :expected_hidden_size]
             pooled_prompt_embeds_clip_l = text_outputs_l[0]
 
             prompt_embeds_clip_l_list.append(prompt_embeds_clip_l)
@@ -115,7 +111,8 @@ def sample_images(sdxl_pipeline, adapter_model, llama_tokenizer, llama_model, pr
         pooled_prompt_embeds_clip_g = torch.cat(pooled_prompt_embeds_clip_g_list, dim=1).mean(dim=1) # [1, hidden_dim_g]
 
         concatenated_prompt_embeds = torch.cat((concatenated_prompt_embeds_l, concatenated_prompt_embeds_g), dim=-1) # [seq_len_total, hidden_dim_l + hidden_dim_g]
-
+        print(concatenated_prompt_embeds.shape)
+        print(pooled_prompt_embeds_clip_g.shape)
         image = sdxl_pipeline(
             prompt_embeds=concatenated_prompt_embeds,
             pooled_prompt_embeds=pooled_prompt_embeds_clip_g,
