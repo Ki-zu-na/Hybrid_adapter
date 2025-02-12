@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 import argparse
 from omegaconf import OmegaConf
-from transformers import AutoTokenizer, AutoModel, CLIPProcessor, CLIPModel, get_cosine_schedule_with_warmup
+from transformers import AutoTokenizer, AutoModel, CLIPProcessor, CLIPModel,  get_cosine_with_hard_restarts_schedule_with_warmup
 from diffusers import StableDiffusionXLPipeline, DDIMScheduler
 
 import wandb
@@ -93,10 +93,11 @@ def train(config_path):
     criterion = nn.MSELoss()
     # 学习率调度器
     num_training_steps = num_epochs * (len(JSONAdapterDataset(json_data_path, llama_tokenizer, llama_model, sdxl_model_path, device)) // (batch_size * gradient_accumulation_steps))
-    lr_scheduler = get_cosine_schedule_with_warmup(
+    lr_scheduler = get_cosine_with_hard_restarts_schedule_with_warmup(
         optimizer=optimizer,
-        num_warmup_steps=num_training_steps // 10,  # 10% 的训练步数用于预热
+        num_warmup_steps=num_training_steps // 20,  # 5% 的训练步数用于预热
         num_training_steps=num_training_steps,
+        num_cycles=10
     )
 
     # 使用 JSONAdapterDataset 加载 JSON 数据
