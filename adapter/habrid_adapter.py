@@ -155,8 +155,8 @@ class HybridAdapter(nn.Module):
             cross_attn_input: [batch_size, seq_length_context, input_dim] (可选外部上下文信息)
         输出:
             tuple: (prompt_embeds, pooled_prompt_embeds)
-                - prompt_embeds: [batch_size, seq_len, clip_l_dim + clip_h_dim]  (拼接后的 prompt embeddings)
-                - pooled_prompt_embeds: [batch_size, clip_h_dim] (CLIP ViT-H/14 维度的 pooled embedding)
+                - prompt_embeds: [batch_size, seq_len, clip_l_dim + clip_g_dim]  (拼接后的 prompt embeddings)
+                - pooled_prompt_embeds: [batch_size, clip_g_dim] (OpenCLIP ViT-bigG/14 维度的 pooled embedding)
         """
         batch_size = x.shape[0]
 
