@@ -10,10 +10,9 @@ from utils.embedding import get_llama_embedding
 import torch
 from transformers import CLIPTokenizer, CLIPTextModel
 
-def _chunk_prompt_simple(prompt: str, tokenizer: CLIPTokenizer, max_length: int):
+def _chunk_prompt_simple(prompt: str, tokenizer: CLIPTokenizer, max_length: int, max_chunks: int = 5):
     """
-    将 prompt 简单地分割成多个不超过 max_length 的子块。
-    直接切分文本, 不需要手动处理 token ID 和特殊 token。
+    将 prompt 分割成多个子块，最多 max_chunks 个。
     """
     words = prompt.split()
     chunks = []
@@ -28,47 +27,37 @@ def _chunk_prompt_simple(prompt: str, tokenizer: CLIPTokenizer, max_length: int)
             chunks.append(" ".join(current_chunk))
             current_chunk = []
             current_length = 0
+            if len(chunks) >= max_chunks:  # 达到最大块数，停止添加
+                break
 
         current_chunk.append(word)
         current_length += word_length
 
-    if current_chunk:
+    if current_chunk and len(chunks) < max_chunks: # 确保不超过 max_chunks
         chunks.append(" ".join(current_chunk))
 
     return chunks
     
 
-def get_prompt_embeddings_chunked(prompt: str, tokenizer: CLIPTokenizer, text_encoder: CLIPTextModel, device: torch.device, max_length: int):
+def get_prompt_embeddings_chunked(prompt: str, tokenizer: CLIPTokenizer, text_encoder: CLIPTextModel, device: torch.device, max_length: int, max_chunks:int = 5):
     """
-    分块获取 prompt 的 embeddings。
-
-    Args:
-        prompt: 要处理的 prompt 字符串。
-        tokenizer: 使用的 tokenizer。
-        text_encoder: 使用的 text encoder。
-        device: 运行设备 (cpu/cuda)。
-        max_length: tokenizer 的最大长度（包含特殊token）。
-
-    Returns:
-        concatenated_prompt_embeds: 拼接后的 prompt embeddings, 形状为 (batch_size, num_chunks * (max_length-2), embedding_dim)。
-        pooled_prompt_embeds: 池化后的 prompt embeddings, 形状为 (batch_size, embedding_dim)。
+    分块获取 prompt 的 embeddings，最多 max_chunks 个块。
     """
-
-    prompt_chunks = _chunk_prompt_simple(prompt, tokenizer, max_length)
+    prompt_chunks = _chunk_prompt_simple(prompt, tokenizer, max_length, max_chunks)
     prompt_embeds_list = []
     pooled_prompt_embeds_list = []
 
     for chunk in prompt_chunks:
         encoded_input = tokenizer(
             chunk,
-            padding="max_length",  # 填充到最大长度
+            padding="max_length",
             max_length=max_length,
-            truncation=False,  # 不要截断，我们已经分段
+            truncation=False,
             return_tensors="pt",
         )
         encoded_input = {k: v.to(device) for k, v in encoded_input.items()}
 
-        with torch.no_grad():  # 禁用梯度计算，推理阶段不需要
+        with torch.no_grad():
             text_outputs = text_encoder(**encoded_input, output_hidden_states=True)
 
         # 使用倒数第二层的 hidden states 作为 prompt embeddings
@@ -243,12 +232,20 @@ class JSONAdapterDataset(Dataset):
 
         max_length_l = tokenizer_l.model_max_length -2
         max_length_g = tokenizer_g.model_max_length -2
+        max_chunks = 5
         unified_max_length = max(max_length_l, max_length_g)
+        target_length = max_chunks * (unified_max_length-2)
+
         # CLIP ViT-L/14 embeddings
-        prompt_embeds_l, _ = get_prompt_embeddings_chunked(new_prompt, tokenizer_l, text_encoder_l, self.device, unified_max_length)
+        prompt_embeds_l, _ = get_prompt_embeddings_chunked(new_prompt, tokenizer_l, text_encoder_l, self.device, unified_max_length, max_chunks)
 
         # CLIP ViT-bigG/14 embeddings (只需要 pooled)
         prompt_embeds_g, pooled_prompt_embeds_g = get_prompt_embeddings_chunked(new_prompt, tokenizer_g, text_encoder_g, self.device, unified_max_length)
+
+        if prompt_embeds_l.shape[1] > target_length:
+            prompt_embeds_l = prompt_embeds_l[:,:target_length, :]
+        if prompt_embeds_g.shape[1] > target_length:
+            prompt_embeds_g = prompt_embeds_g[:, :target_length, :]
 
         concat_prompt_embeds = torch.cat((prompt_embeds_l, prompt_embeds_g), dim=-1)
         return llama_emb, (concat_prompt_embeds, pooled_prompt_embeds_g) # 返回 chunked 的 prompt_embeds和 pooled_prompt_embeds_g
