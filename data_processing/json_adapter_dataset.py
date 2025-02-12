@@ -187,7 +187,10 @@ class JSONAdapterDataset(Dataset):
                 text_outputs_l = text_encoder_l(**encoded_input_l, output_hidden_states=True)
                 prompt_embeds_clip_l = text_outputs_l.hidden_states[-2]
                 pooled_prompt_embeds_clip_l = text_outputs_l[0]
-
+            # 如果最后一维不等于预期的 hidden_size，则截断多余的部分
+                expected_hidden_size = self.sdxl_model.text_encoder.config.hidden_size
+                if prompt_embeds_clip_l.size(-1) != expected_hidden_size:
+                    prompt_embeds_clip_l = prompt_embeds_clip_l[..., :expected_hidden_size]
                 prompt_embeds_clip_l_list.append(prompt_embeds_clip_l)
                 pooled_prompt_embeds_clip_l_list.append(pooled_prompt_embeds_clip_l)
 
