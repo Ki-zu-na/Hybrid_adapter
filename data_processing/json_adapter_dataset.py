@@ -213,8 +213,8 @@ class JSONAdapterDataset(Dataset):
             concatenated_prompt_embeds_g = torch.cat(prompt_embeds_clip_g_list, dim=1) # [1, seq_len_total_g, hidden_dim_g]
 
             # 简单平均池化所有段落的 pooled prompt embeddings
-            pooled_prompt_embeds_clip_l = torch.cat(pooled_prompt_embeds_clip_l_list, dim=1).mean(dim=1) # [1, hidden_dim_l]
-            pooled_prompt_embeds_clip_g = torch.cat(pooled_prompt_embeds_clip_g_list, dim=1).mean(dim=1) # [1, hidden_dim_g]
+            pooled_prompt_embeds_clip_l = concatenated_prompt_embeds_l.mean(dim=1, keepdim=True) # [1, hidden_dim_l]
+            pooled_prompt_embeds_clip_g = concatenated_prompt_embeds_g.mean(dim=1, keepdim=True) # [1, hidden_dim_g]
 
             # 拼接 CLIP-L 和 CLIP-G 的 prompt embeddings
             concatenated_prompt_embeds = torch.cat((concatenated_prompt_embeds_l.squeeze(0), concatenated_prompt_embeds_g.squeeze(0)), dim=-1) # [seq_len_total, hidden_dim_l + hidden_dim_g]
