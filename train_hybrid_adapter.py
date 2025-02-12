@@ -96,7 +96,7 @@ def train(config_path):
     num_training_steps = num_epochs * (len(JSONAdapterDataset(json_data_path, llama_tokenizer, llama_model, sdxl_model_path, device)) // (batch_size * gradient_accumulation_steps))
     lr_scheduler = get_cosine_with_hard_restarts_schedule_with_warmup(
         optimizer=optimizer,
-        num_warmup_steps=num_training_steps // 20,  # 5% 的训练步数用于预热
+        num_warmup_steps=100,  # 100的训练步数用于预热
         num_training_steps=num_training_steps,
         num_cycles=10
     )
