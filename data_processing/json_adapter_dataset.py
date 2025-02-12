@@ -73,8 +73,6 @@ def get_prompt_embeddings_chunked(prompt: str, tokenizer: CLIPTokenizer, text_en
     # pooled_prompt_embeds 可以选择最后一个 chunk 的，或者平均，这里选择平均
     pooled_prompt_embeds = concatenated_prompt_embeds.mean(dim=1, keepdim=True)
     pooled_prompt_embeds = pooled_prompt_embeds.squeeze(0)
-    print(concatenated_prompt_embeds.shape)
-    print(pooled_prompt_embeds.shape)
     return concatenated_prompt_embeds, pooled_prompt_embeds
 class JSONAdapterDataset(Dataset):
     """
