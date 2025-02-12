@@ -111,10 +111,9 @@ def sample_images(sdxl_pipeline, adapter_model, llama_tokenizer, llama_model, pr
         # 简单平均池化所有段落的 pooled prompt embeddings
         pooled_prompt_embeds_clip_g = concatenated_prompt_embeds_g.mean(dim=1, keepdim=True) # [1, hidden_dim_g]
         pooled_prompt_embeds_clip_g = pooled_prompt_embeds_clip_g.squeeze(0) # [hidden_dim_g]
-        
+
         concatenated_prompt_embeds = torch.cat((concatenated_prompt_embeds_l, concatenated_prompt_embeds_g), dim=-1) # [seq_len_total, hidden_dim_l + hidden_dim_g]
-        print(concatenated_prompt_embeds.shape)
-        print(pooled_prompt_embeds_clip_g.shape)
+
         image = sdxl_pipeline(
             prompt_embeds=concatenated_prompt_embeds,
             pooled_prompt_embeds=pooled_prompt_embeds_clip_g,

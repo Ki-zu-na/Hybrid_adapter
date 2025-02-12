@@ -180,7 +180,7 @@ class JSONAdapterDataset(Dataset):
                     chunk,
                     padding="max_length",
                     max_length=max_length_l,
-                    truncation=False, #  重要：这里设置为 False，不要截断，我们已经分段了
+                    truncation=True, #  重要：这里设置为 True，截断，我们已经分段了
                     return_tensors="pt",
                 )
                 encoded_input_l = {k: v.to(self.device) for k, v in encoded_input_l.items()}
@@ -197,7 +197,7 @@ class JSONAdapterDataset(Dataset):
                     chunk,
                     padding="max_length",
                     max_length=max_length_g,
-                    truncation=False, # 重要：这里设置为 False，不要截断，我们已经分段了
+                    truncation=True, # 重要：这里设置为 True，截断，我们已经分段了
                     return_tensors="pt",
                 )
                 encoded_input_g = {k: v.to(self.device) for k, v in encoded_input_g.items()}
