@@ -13,7 +13,7 @@ from diffusers import StableDiffusionXLPipeline, DDIMScheduler
 import wandb
 
 from adapter.habrid_adapter import HybridAdapter
-from data_processing.json_adapter_dataset import JSONAdapterDataset
+from data_processing.json_adapter_dataset import JSONAdapterDataset, custom_collate_fn
 from utils.embedding import get_llama_embedding
 from utils.sample import sample_images
 
@@ -107,6 +107,7 @@ def train(config_path):
         tokenizer=llama_tokenizer,
         llama_model=llama_model,
         sdxl_model_path=sdxl_model_path,
+        custom_collate_fn=custom_collate_fn,
         device=device
     )
     

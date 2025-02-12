@@ -2,7 +2,8 @@ import os
 import json
 import random
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
+from torch.nn.utils.rnn import pad_sequence
 from diffusers import StableDiffusionXLPipeline
 from utils.embedding import get_llama_embedding
 
@@ -244,3 +245,29 @@ class JSONAdapterDataset(Dataset):
         if current_chunk_tokens: # 处理最后剩余的 chunk
             chunks.append(tokenizer.convert_tokens_to_string(current_chunk_tokens))
         return chunks
+
+def custom_collate_fn(batch):
+    """
+    Custom collate function to pad variable-length prompt embeddings.
+    
+    Args:
+        batch: a list of samples, each sample is a tuple (llama_emb, (prompt_embeds, pooled_prompt_embeds)).
+    
+    Returns:
+        A batch where prompt_embeds are padded to the same sequence length.
+    """
+    llama_emb_list = []
+    prompt_embeds_list = []
+    pooled_prompt_embeds_list = []
+    
+    for llama_emb, (prompt_embeds, pooled_prompt_embeds) in batch:
+        llama_emb_list.append(llama_emb)  # Fixed dimension
+        prompt_embeds_list.append(prompt_embeds)  # [T, feature_dim] where T is variable
+        pooled_prompt_embeds_list.append(pooled_prompt_embeds)
+    
+    llama_emb_batch = torch.stack(llama_emb_list, dim=0)
+    # Pad the prompt_embeds sequences along the sequence dimension
+    prompt_embeds_batch = pad_sequence(prompt_embeds_list, batch_first=True, padding_value=0)
+    pooled_prompt_embeds_batch = torch.stack(pooled_prompt_embeds_list, dim=0)
+    
+    return llama_emb_batch, (prompt_embeds_batch, pooled_prompt_embeds_batch)
