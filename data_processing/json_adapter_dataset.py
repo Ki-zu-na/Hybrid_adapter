@@ -197,10 +197,10 @@ class JSONAdapterDataset(Dataset):
         llama_emb = get_llama_embedding(new_prompt, self.tokenizer, self.llama_model, self.device)
 
         # 使用官方方式计算 SDXL 文本嵌入 (同时获取 text_encoder 和 text_encoder_2 的 embedding)
-        tokenizer_l = self.tokenizer_l # CLIP ViT-L/14 tokenizer
-        tokenizer_g = self.tokenizer_g # CLIP ViT-bigG/14 tokenizer
-        text_encoder_l = self.text_encoder_l # CLIP ViT-L/14 text encoder
-        text_encoder_g = self.text_encoder_g # CLIP ViT-bigG/14 text encoder
+        tokenizer_l = self.sdxl_model.tokenizer # CLIP ViT-L/14 tokenizer
+        tokenizer_g = self.sdxl_model.tokenizer_2 # CLIP ViT-bigG/14 tokenizer
+        text_encoder_l = self.sdxl_model.text_encoder # CLIP ViT-L/14 text encoder
+        text_encoder_g = self.sdxl_model.text_encoder_2 # CLIP ViT-bigG/14 text encoder
 
         max_length_l = tokenizer_l.model_max_length -2
         max_length_g = tokenizer_g.model_max_length -2
