@@ -168,26 +168,22 @@ class JSONAdapterDataset(Dataset):
 
             # 获取 text_encoder (CLIP ViT-L/14) 的 embedding
             text_outputs = self.sdxl_model.text_encoder(**encoded_input)
-            prompt_embeds_clip_l = text_outputs.last_hidden_state
-            if hasattr(text_outputs, "pooler_output") and text_outputs.pooler_output is not None:
-                pooled_prompt_embeds_clip_l = text_outputs.pooler_output
-            else:
-                pooled_prompt_embeds_clip_l = prompt_embeds_clip_l.mean(dim=1, keepdim=True)
+            prompt_embeds_clip_l = text_outputs.hidden_states[-2]
+
+            pooled_prompt_embeds_clip_l = prompt_embeds_clip_l.mean(dim=1, keepdim=True)
             prompt_embeds_clip_l = prompt_embeds_clip_l.squeeze(0)
             pooled_prompt_embeds_clip_l = pooled_prompt_embeds_clip_l.reshape(-1) # 明确 reshape 为 1D
 
-            # 获取 text_encoder_2 (CLIP ViT-H/14) 的 embedding
+            # 获取 text_encoder_2 (OpenCLIP ViT-bigG/14) 的 embedding
             text_outputs_2 = self.sdxl_model.text_encoder_2(**encoded_input)
-            prompt_embeds_clip_h = text_outputs_2.last_hidden_state
-            if hasattr(text_outputs_2, "pooler_output") and text_outputs_2.pooler_output is not None:
-                pooled_prompt_embeds_clip_h = text_outputs_2.pooler_output
-            else:
-                pooled_prompt_embeds_clip_h = prompt_embeds_clip_h.mean(dim=1, keepdim=True)
-            prompt_embeds_clip_h = prompt_embeds_clip_h.squeeze(0)
-            pooled_prompt_embeds_clip_h = pooled_prompt_embeds_clip_h.reshape(-1) # 明确 reshape 为 1D
+            prompt_embeds_clip_g = text_outputs_2.hidden_states[-2]
+
+            pooled_prompt_embeds_clip_g = prompt_embeds_clip_g.mean(dim=1, keepdim=True)
+            prompt_embeds_clip_g = prompt_embeds_clip_g.squeeze(0)
+            pooled_prompt_embeds_clip_g = pooled_prompt_embeds_clip_g.reshape(-1) # 明确 reshape 为 1D
 
             # Concatenate prompt embeddings
-            concatenated_prompt_embeds = torch.cat((prompt_embeds_clip_l, prompt_embeds_clip_h), dim=-1)
-            #concatenated_pooled_prompt_embeds = torch.cat((pooled_prompt_embeds_clip_l, pooled_prompt_embeds_clip_h), dim=-1)
+            concatenated_prompt_embeds = torch.cat((prompt_embeds_clip_l, prompt_embeds_clip_g), dim=-1)
+            #concatenated_pooled_prompt_embeds = torch.cat((pooled_prompt_embeds_clip_l, pooled_prompt_embeds_clip_g), dim=-1)
 
-        return llama_emb, (concatenated_prompt_embeds, pooled_prompt_embeds_clip_h) # 返回拼接后的 embedding
+        return llama_emb, (concatenated_prompt_embeds, pooled_prompt_embeds_clip_g) # 返回拼接后的 embedding
