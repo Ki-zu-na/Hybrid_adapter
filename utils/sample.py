@@ -118,18 +118,18 @@ def sample_images(sdxl_pipeline, adapter_model, llama_tokenizer, llama_model, pr
     image.save(filepath)
     print(f"Sample image saved to: {filepath}")
 
-    def _chunk_prompt(self, prompt_text, tokenizer, max_length):
-        """
-        将长文本 prompt 分割成多个段落，每个段落长度不超过 max_length。
-        """
-        tokens = tokenizer.tokenize(prompt_text)
-        chunks = []
-        current_chunk_tokens = []
-        for token in tokens:
-            current_chunk_tokens.append(token)
-            if len(current_chunk_tokens) >= max_length:
-                chunks.append(tokenizer.convert_tokens_to_string(current_chunk_tokens))
-                current_chunk_tokens = []
-        if current_chunk_tokens: # 处理最后剩余的 chunk
+def _chunk_prompt(prompt_text, tokenizer, max_length):
+    """
+    将长文本 prompt 分割成多个段落，每个段落长度不超过 max_length。
+    """
+    tokens = tokenizer.tokenize(prompt_text)
+    chunks = []
+    current_chunk_tokens = []
+    for token in tokens:
+        current_chunk_tokens.append(token)
+        if len(current_chunk_tokens) >= max_length:
             chunks.append(tokenizer.convert_tokens_to_string(current_chunk_tokens))
-        return chunks
+            current_chunk_tokens = []
+    if current_chunk_tokens: # 处理最后剩余的 chunk
+        chunks.append(tokenizer.convert_tokens_to_string(current_chunk_tokens))
+    return chunks
