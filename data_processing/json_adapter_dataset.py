@@ -167,7 +167,7 @@ class JSONAdapterDataset(Dataset):
             encoded_input = {key: value.to(self.device) for key, value in encoded_input.items()}
 
             # 获取 text_encoder (CLIP ViT-L/14) 的 embedding
-            text_outputs = self.sdxl_model.text_encoder(**encoded_input)
+            text_outputs = self.sdxl_model.text_encoder(**encoded_input, output_hidden_states=True) # 明确添加 output_hidden_states=True
             prompt_embeds_clip_l = text_outputs.hidden_states[-2]
 
             pooled_prompt_embeds_clip_l = prompt_embeds_clip_l.mean(dim=1, keepdim=True)
@@ -175,7 +175,7 @@ class JSONAdapterDataset(Dataset):
             pooled_prompt_embeds_clip_l = pooled_prompt_embeds_clip_l.reshape(-1) # 明确 reshape 为 1D
 
             # 获取 text_encoder_2 (OpenCLIP ViT-bigG/14) 的 embedding
-            text_outputs_2 = self.sdxl_model.text_encoder_2(**encoded_input)
+            text_outputs_2 = self.sdxl_model.text_encoder_2(**encoded_input, output_hidden_states=True) # 明确添加 output_hidden_states=True
             prompt_embeds_clip_g = text_outputs_2.hidden_states[-2]
 
             pooled_prompt_embeds_clip_g = prompt_embeds_clip_g.mean(dim=1, keepdim=True)
