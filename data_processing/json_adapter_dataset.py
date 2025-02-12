@@ -240,11 +240,21 @@ class JSONAdapterDataset(Dataset):
         # CLIP ViT-bigG/14 embeddings (只需要 pooled)
         prompt_embeds_g, pooled_prompt_embeds_g = get_prompt_embeddings_chunked(new_prompt, tokenizer_g, text_encoder_g, self.device, unified_max_length)
 
+        if prompt_embeds_l is None or prompt_embeds_g is None:
+            embedding_dim_l = text_encoder_l.config.hidden_size
+            embedding_dim_g = text_encoder_g.config.hidden_size
+
+            if prompt_embeds_l is None:
+                prompt_embeds_l = torch.zeros((1, unified_max_length * max_chunks, embedding_dim_l), device = self.device)
+            if prompt_embeds_g is None:
+                prompt_embeds_g = torch.zeros((1, unified_max_length * max_chunks, embedding_dim_g), device=self.device)
+
+        # 截断到统一长度 (在 __getitem__ 中)
+        target_length = max_chunks * (unified_max_length - 2)
         if prompt_embeds_l.shape[1] > target_length:
-            prompt_embeds_l = prompt_embeds_l[:,:target_length, :]
+            prompt_embeds_l = prompt_embeds_l[:, :target_length, :]
         if prompt_embeds_g.shape[1] > target_length:
             prompt_embeds_g = prompt_embeds_g[:, :target_length, :]
-
         concat_prompt_embeds = torch.cat((prompt_embeds_l, prompt_embeds_g), dim=-1)
         return llama_emb, (concat_prompt_embeds, pooled_prompt_embeds_g) # 返回 chunked 的 prompt_embeds和 pooled_prompt_embeds_g
 
