@@ -46,7 +46,7 @@ def get_prompt_embeddings_chunked(prompt, tokenizer, text_encoder, device, max_l
     # pooled_prompt_embeds 可以选择最后一个 chunk 的，或者平均，这里选择平均
     pooled_prompt_embeds = torch.stack(pooled_prompt_embeds_list, dim=0) if pooled_prompt_embeds_list else None
     pooled_prompt_embeds = pooled_prompt_embeds.mean(dim=0)
-    print(concatenated_prompt_embeds.shape, pooled_prompt_embeds.shape)
+
     return concatenated_prompt_embeds, pooled_prompt_embeds
 class JSONAdapterDataset(Dataset):
     """
@@ -192,8 +192,7 @@ class JSONAdapterDataset(Dataset):
         new_prompt = ", ".join(fixed_tags + flex_tags)
         if not new_prompt:
             new_prompt = ""
-        example = self.dataset[idx]
-        prompt = example["prompt"]
+
         # 计算 Llama embedding
         llama_emb = get_llama_embedding(new_prompt, self.tokenizer, self.llama_model, self.device)
 
@@ -207,10 +206,10 @@ class JSONAdapterDataset(Dataset):
         max_length_g = tokenizer_g.model_max_length -2
 
         # CLIP ViT-L/14 embeddings
-        prompt_embeds_l, _ = get_prompt_embeddings_chunked(prompt, tokenizer_l, text_encoder_l, self.device, max_length_l)
+        prompt_embeds_l, _ = get_prompt_embeddings_chunked(new_prompt, tokenizer_l, text_encoder_l, self.device, max_length_l)
 
         # CLIP ViT-bigG/14 embeddings (只需要 pooled)
-        prompt_embeds_g, pooled_prompt_embeds_g = get_prompt_embeddings_chunked(prompt, tokenizer_g, text_encoder_g, self.device, max_length_g)
+        prompt_embeds_g, pooled_prompt_embeds_g = get_prompt_embeddings_chunked(new_prompt, tokenizer_g, text_encoder_g, self.device, max_length_g)
 
         concat_prompt_embeds = torch.cat((prompt_embeds_l, prompt_embeds_g), dim=-1)
         return llama_emb, (concat_prompt_embeds, pooled_prompt_embeds_g) # 返回 chunked 的 prompt_embeds和 pooled_prompt_embeds_g
