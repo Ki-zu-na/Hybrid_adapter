@@ -243,12 +243,12 @@ class JSONAdapterDataset(Dataset):
 
         max_length_l = tokenizer_l.model_max_length -2
         max_length_g = tokenizer_g.model_max_length -2
-
+        unified_max_length = max(max_length_l, max_length_g)
         # CLIP ViT-L/14 embeddings
-        prompt_embeds_l, _ = get_prompt_embeddings_chunked(new_prompt, tokenizer_l, text_encoder_l, self.device, max_length_l)
+        prompt_embeds_l, _ = get_prompt_embeddings_chunked(new_prompt, tokenizer_l, text_encoder_l, self.device, unified_max_length)
 
         # CLIP ViT-bigG/14 embeddings (只需要 pooled)
-        prompt_embeds_g, pooled_prompt_embeds_g = get_prompt_embeddings_chunked(new_prompt, tokenizer_g, text_encoder_g, self.device, max_length_g)
+        prompt_embeds_g, pooled_prompt_embeds_g = get_prompt_embeddings_chunked(new_prompt, tokenizer_g, text_encoder_g, self.device, unified_max_length)
 
         concat_prompt_embeds = torch.cat((prompt_embeds_l, prompt_embeds_g), dim=-1)
         return llama_emb, (concat_prompt_embeds, pooled_prompt_embeds_g) # 返回 chunked 的 prompt_embeds和 pooled_prompt_embeds_g
