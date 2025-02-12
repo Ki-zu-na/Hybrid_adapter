@@ -37,7 +37,7 @@ def train(config_path):
     input_dim = config.get("input_dim", 2048)
     seq_len = config.get("seq_len", 512)
     clip_l_dim = config.get("clip_l_dim", 768)
-    clip_h_dim = config.get("clip_h_dim", 1280)
+    clip_g_dim = config.get("clip_g_dim", 1280)
     mlp_hidden_dim = config.get("mlp_hidden_dim", 4096)
     num_transformer_layers = config.get("num_transformer_layers", 2)
     num_attention_heads = config.get("num_attention_heads", 8)
@@ -80,7 +80,7 @@ def train(config_path):
         num_attention_heads=num_attention_heads,
         dropout=dropout,
         clip_l_dim=clip_l_dim, # 添加 clip_l_dim 参数
-        clip_h_dim=clip_h_dim # 添加 clip_h_dim 参数
+        clip_g_dim=clip_g_dim # 添加 clip_g_dim 参数
     ).to(device)
     
     # 加载预训练的 Adapter 权重 (如果提供)
@@ -222,7 +222,7 @@ def train(config_path):
                 pooled_loss = criterion_pooled(output_te_pooled, pooled_prompt_embeds)
 
                 # 将两个损失加权求和，得到总损失 (你可以调整权重)
-                total_loss = prompt_loss + pooled_loss #  简单的加和，你可以尝试加权，例如： total_loss = prompt_loss + 0.5 * pooled_loss
+                total_loss = 5 * prompt_loss + pooled_loss #  简单的加和，你可以尝试加权，例如： total_loss = prompt_loss + 0.5 * pooled_loss
                 loss = total_loss / gradient_accumulation_steps # 梯度累积需要除以步数
 
             if scaler is not None:
