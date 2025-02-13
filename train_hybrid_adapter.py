@@ -107,7 +107,7 @@ def train(config_path):
         tokenizer=llama_tokenizer,
         llama_model=llama_model,
         sdxl_model_path=sdxl_model_path,
-        custom_collate_fn=custom_collate_fn,
+
         device=device
     )
     
@@ -189,7 +189,8 @@ def train(config_path):
         shuffle=True,
         num_workers=num_workers,
         pin_memory=False,
-        worker_init_fn=worker_init_fn
+        worker_init_fn=worker_init_fn,
+        custom_collate_fn=custom_collate_fn
     )
 
     # AMP 自动混合精度初始化 (仅在CUDA可用时)
