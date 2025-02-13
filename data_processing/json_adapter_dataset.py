@@ -250,8 +250,7 @@ class JSONAdapterDataset(Dataset):
 
         concat_prompt_embeds = torch.cat((prompt_embeds_l, prompt_embeds_g), dim=-1)
 
-
-
+        print(concat_prompt_embeds.shape)
         return llama_emb, (concat_prompt_embeds, pooled_prompt_embeds_g) # 返回 chunked 的 prompt_embeds和 pooled_prompt_embeds_g
 
 
