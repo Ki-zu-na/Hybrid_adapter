@@ -190,7 +190,7 @@ def train(config_path):
         num_workers=num_workers,
         pin_memory=False,
         worker_init_fn=worker_init_fn,
-        custom_collate_fn=custom_collate_fn
+        collate_fn=custom_collate_fn
     )
 
     # AMP 自动混合精度初始化 (仅在CUDA可用时)

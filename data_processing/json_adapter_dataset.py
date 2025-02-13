@@ -115,7 +115,7 @@ class JSONAdapterDataset(Dataset):
     def __init__(self, json_file_path, tokenizer, llama_model, sdxl_model_path, device,
                  drop_artist_prob=0.3, caption_nl_prob=0.2, style_mix_prob=0.1,
                  drop_all_fixed_prob=0.1, drop_all_flex_prob=0.1, dropout_rate=0.1,
-                 shuffle_caption=True, custom_collate_fn=None):
+                 shuffle_caption=True):
         super().__init__()
         with open(json_file_path, "r", encoding="utf-8") as f:
             self.json_data = json.load(f)
