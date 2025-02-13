@@ -174,7 +174,10 @@ class HybridAdapter(nn.Module):
 
         # 通过MLP进行初步非线性变换
         x = self.mlp(x)
-
+        if cross_attn_input is not None:
+            # 假设 cross_attn_input 是 [batch_size, num_chunks, seq_len, hidden_dim]
+            # 我们需要将其转换为 [batch_size, total_seq_len, hidden_dim]
+            cross_attn_input = cross_attn_input.view(batch_size, -1, cross_attn_input.size(-1))
         # 通过Transformer Blocks，传入可选的 cross attention 信息
         for block in self.transformer_blocks:
             x = block(x, cross_attn_input=cross_attn_input)
