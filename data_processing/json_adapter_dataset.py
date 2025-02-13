@@ -10,7 +10,7 @@ from utils.embedding import get_llama_embedding
 import torch
 from transformers import CLIPTokenizer, CLIPTextModel
 
-def _chunk_prompt_simple(prompt: str, tokenizer: CLIPTokenizer, max_length: int, max_chunks: int = 5):
+def _chunk_prompt_simple(prompt: str, tokenizer: CLIPTokenizer, max_length: int, max_chunks: int = 4):
     """
     将 prompt 分割成固定数量的子块（max_chunks）。
     如果实际块数超过 max_chunks，则截断。
@@ -239,7 +239,7 @@ class JSONAdapterDataset(Dataset):
 
         max_length_l = tokenizer_l.model_max_length -2
         max_length_g = tokenizer_g.model_max_length -2
-        max_chunks = 5
+        max_chunks = 4
         unified_max_length = max(max_length_l, max_length_g)
 
         # CLIP ViT-L/14 embeddings
@@ -250,7 +250,7 @@ class JSONAdapterDataset(Dataset):
 
         concat_prompt_embeds = torch.cat((prompt_embeds_l, prompt_embeds_g), dim=-1)
 
-        print(concat_prompt_embeds.shape)
+
         return llama_emb, (concat_prompt_embeds, pooled_prompt_embeds_g) # 返回 chunked 的 prompt_embeds和 pooled_prompt_embeds_g
 
 
