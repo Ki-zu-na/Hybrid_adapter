@@ -12,7 +12,9 @@ from transformers import CLIPTokenizer, CLIPTextModel
 
 def _chunk_prompt_simple(prompt: str, tokenizer: CLIPTokenizer, max_length: int, max_chunks: int = 5):
     """
-    将 prompt 分割成多个子块，最多 max_chunks 个。
+    将 prompt 分割成固定数量的子块（max_chunks）。
+    如果实际块数超过 max_chunks，则截断。
+    如果实际块数少于 max_chunks，则用空字符串填充。
     """
     words = prompt.split()
     chunks = []
@@ -33,15 +35,22 @@ def _chunk_prompt_simple(prompt: str, tokenizer: CLIPTokenizer, max_length: int,
         current_chunk.append(word)
         current_length += word_length
 
-    if current_chunk and len(chunks) < max_chunks: # 确保不超过 max_chunks
+    if current_chunk and len(chunks) < max_chunks:  # 添加最后一个 chunk（如果不为空）
         chunks.append(" ".join(current_chunk))
 
+    # 填充/截断 chunks 列表
+    if len(chunks) < max_chunks:
+        chunks.extend([""] * (max_chunks - len(chunks)))  # 用空字符串填充
+    elif len(chunks) > max_chunks:
+        chunks = chunks[:max_chunks]  # 截断
+
     return chunks
+
     
 
-def get_prompt_embeddings_chunked(prompt: str, tokenizer: CLIPTokenizer, text_encoder: CLIPTextModel, device: torch.device, max_length: int, max_chunks:int = 5):
+def get_prompt_embeddings_chunked(prompt: str, tokenizer: CLIPTokenizer, text_encoder: CLIPTextModel, device: torch.device, max_length: int, max_chunks: int = 5):
     """
-    分块获取 prompt 的 embeddings，最多 max_chunks 个块。
+    分块获取 prompt 的 embeddings，固定 max_chunks 个块。
     """
     prompt_chunks = _chunk_prompt_simple(prompt, tokenizer, max_length, max_chunks)
     prompt_embeds_list = []
@@ -52,7 +61,7 @@ def get_prompt_embeddings_chunked(prompt: str, tokenizer: CLIPTokenizer, text_en
             chunk,
             padding="max_length",
             max_length=max_length,
-            truncation=False,
+            truncation=False,  # 因为在 _chunk_prompt_simple 中已经处理了
             return_tensors="pt",
         )
         encoded_input = {k: v.to(device) for k, v in encoded_input.items()}
@@ -232,36 +241,17 @@ class JSONAdapterDataset(Dataset):
         max_length_g = tokenizer_g.model_max_length -2
         max_chunks = 5
         unified_max_length = max(max_length_l, max_length_g)
-        target_length = max_chunks * (unified_max_length-2)
 
         # CLIP ViT-L/14 embeddings
         prompt_embeds_l, _ = get_prompt_embeddings_chunked(new_prompt, tokenizer_l, text_encoder_l, self.device, unified_max_length, max_chunks)
 
         # CLIP ViT-bigG/14 embeddings (只需要 pooled)
-        prompt_embeds_g, pooled_prompt_embeds_g = get_prompt_embeddings_chunked(new_prompt, tokenizer_g, text_encoder_g, self.device, unified_max_length)
-
-        if prompt_embeds_l is None or prompt_embeds_g is None:
-            embedding_dim_l = text_encoder_l.config.hidden_size
-            embedding_dim_g = text_encoder_g.config.hidden_size
-
-            if prompt_embeds_l is None:
-                prompt_embeds_l = torch.zeros((1, unified_max_length * max_chunks, embedding_dim_l), device = self.device)
-            if prompt_embeds_g is None:
-                prompt_embeds_g = torch.zeros((1, unified_max_length * max_chunks, embedding_dim_g), device=self.device)
-
-        # 截断到统一长度 (在 __getitem__ 中)
-        target_length = max_chunks * (unified_max_length - 2)
-        if prompt_embeds_l.shape[1] > target_length:
-            prompt_embeds_l = prompt_embeds_l[:, :target_length, :]
-        if prompt_embeds_g.shape[1] > target_length:
-            prompt_embeds_g = prompt_embeds_g[:, :target_length, :]
-
+        prompt_embeds_g, pooled_prompt_embeds_g = get_prompt_embeddings_chunked(new_prompt, tokenizer_g, text_encoder_g, self.device, unified_max_length, max_chunks)
 
         concat_prompt_embeds = torch.cat((prompt_embeds_l, prompt_embeds_g), dim=-1)
 
-        max_combined_length = target_length  # 或者你可以定义一个单独的最大组合长度
-        if concat_prompt_embeds.shape[1] > max_combined_length:
-             concat_prompt_embeds = concat_prompt_embeds[:,:max_combined_length,:]
+
+
         return llama_emb, (concat_prompt_embeds, pooled_prompt_embeds_g) # 返回 chunked 的 prompt_embeds和 pooled_prompt_embeds_g
 
 
